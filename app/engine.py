@@ -33,10 +33,11 @@ def _f(v):
 
 
 class Engine:
-    def __init__(self, cfg, client=None):
+    def __init__(self, cfg, client=None, first_failure_inference=None):
         self.cfg = cfg
         self.store = Store(cfg.db_path)
         self.client = client or SimClient(cfg)
+        self.first_failure_inference = first_failure_inference
         self.mon = {l: LineMonitor(l, cfg) for l in cfg.asm_lines}
         self.fc = {l: None for l in cfg.asm_lines}
         self.last_unit = {}
@@ -69,7 +70,7 @@ class Engine:
         for l in self.cfg.asm_lines:
             for u in s.q("SELECT * FROM asm_units WHERE line_id=? ORDER BY n, rowid", (l,)):
                 self._feed_monitor(l, u, announce=False)
-            self.fc[l] = self.mon[l].forecast()
+            self.fc[l] = self._forecast(l)
         for l in self.cursor:                      # resume after a restart: next row = highest stored row + 1
             r = s.q1("SELECT MAX(CAST(event_id AS INTEGER)) m FROM raw_events WHERE source_line=?", (l,))
             if r and r["m"] is not None:
@@ -102,6 +103,44 @@ class Engine:
         if msg != self.last_error:
             self.last_error = msg
             self.store.add_audit("ERROR", detail=dict(message=msg))
+
+    def _forecast(self, line):
+        forecast = self.mon[line].forecast()
+        if self.first_failure_inference is None:
+            forecast["first_failure_inference"] = {
+                "status": "unavailable",
+                "reason": "trained PyTorch model is not configured",
+                "used_for_locking": False,
+            }
+            return forecast
+        if not forecast.get("ready"):
+            forecast["first_failure_inference"] = {
+                "status": "waiting_for_data",
+                "used_for_locking": False,
+            }
+            return forecast
+
+        try:
+            rows = self.mon[line].rows[-self.cfg.window :]
+            result = self.first_failure_inference.predict(
+                rows,
+                self.cfg.horizon,
+                rows[-1]["n"],
+                self.mon[line].unit_step(),
+            )
+        except Exception as error:
+            forecast["first_failure_inference"] = {
+                "status": "error",
+                "reason": str(error),
+                "used_for_locking": False,
+            }
+        else:
+            forecast["first_failure_inference"] = {
+                "status": "available",
+                "used_for_locking": False,
+                **result,
+            }
+        return forecast
 
     def step(self):
         """One polling cycle: BAG/PVC first (all pages), then one slice per assembly line."""
@@ -199,7 +238,7 @@ class Engine:
             with self.line_lock[line]:
                 for row in new_asm:
                     self._feed_monitor(line, row, announce=True)
-                self.fc[line] = self.mon[line].forecast()
+                self.fc[line] = self._forecast(line)
                 self._auto_lock(line)
         return len(records)
 
@@ -244,8 +283,33 @@ class Engine:
                                      dict(depth_mm=u["visual_inspection_mm"], locked_prediction=p[0]["predicted_unit_id"] if p else None))
 
     def _first_nok(self, line):
-        return self.store.q1("SELECT unit_id, n, visual_inspection_mm FROM asm_units WHERE line_id=? AND result='NOK' "
+        return self.store.q1("SELECT unit_id, n, visual_inspection_mm, received_at FROM asm_units WHERE line_id=? AND result='NOK' "
                              "ORDER BY n LIMIT 1", (line,))
+
+    @staticmethod
+    def _unit_id_for_number(current_unit_id, number):
+        tail = str(current_unit_id)
+        digits = len(tail) - len(tail.rstrip("0123456789"))
+        prefix = tail[: len(tail) - digits]
+        return "%s%0*d" % (prefix, digits, number)
+
+    def _first_failure_alert(self, line, updated_at=None):
+        failure = self._first_nok(line)
+        if failure:
+            return dict(status="confirmed", line_id=line, unit_id=failure["unit_id"], unit_number=failure["n"],
+                        depth_mm=failure["visual_inspection_mm"], last_unit=self.last_unit.get(line),
+                        updated_at=failure["received_at"])
+
+        forecast = self.fc.get(line) or {}
+        if not (forecast.get("ready") and forecast.get("alarm_active") and forecast.get("has_estimate")):
+            return None
+        current_unit_id = self.last_unit.get(line)
+        if not current_unit_id:
+            return None
+        predicted_n = int(round(forecast["predicted_n"]))
+        return dict(status="predicted", line_id=line,
+                    unit_id=self._unit_id_for_number(current_unit_id, predicted_n), unit_number=predicted_n,
+                    confidence=forecast.get("confidence"), last_unit=current_unit_id, updated_at=updated_at)
 
     # ------------------------------------------------------------------ predictions
     def locked(self, line):
@@ -277,10 +341,9 @@ class Engine:
                 raise Reject("predicted unit must be at least %d unit(s) ahead of the last received unit (%s)" % (self.cfg.min_lead, last_uid))
             # unit id keeps the width/prefix of the last unit
             tail = str(last_uid)
-            digits = len(tail) - len(tail.rstrip("0123456789"))
-            prefix = tail[: len(tail) - digits]
-            pred_uid = "%s%0*d" % (prefix, digits, predicted_n)
+            pred_uid = self._unit_id_for_number(tail, predicted_n)
             basis = dict(model="ridge-prior + weighted trend + first-failure pmf v1", forecast={k: v for k, v in fc.items() if k != "curve"},
+                         first_failure_inference=fc.get("first_failure_inference"),
                          auto=source == "auto", spec=dict(lsl=self.cfg.lsl_mm, usl=self.cfg.usl_mm),
                          next_row_to_request=dict(self.cursor))   # proof: nothing beyond Y was requested before the lock
             pid, at, h = self.store.add_prediction(line, pred_uid, predicted_n, last_uid, last_n, source, basis)
@@ -382,7 +445,7 @@ class Engine:
         lines = {}
         for l in cfg.asm_lines:
             rows = s.q("SELECT unit_id,n,time,visual_inspection_mm d,axis_following_error_mm ame,pressure_bar p,"
-                       "insertion_speed_mm_s v,clearance_in c,result,reel_id,bag_lot_id FROM asm_units WHERE line_id=? "
+                       "insertion_speed_mm_s v,clearance_in c,result,reel_id,bag_lot_id,received_at FROM asm_units WHERE line_id=? "
                        "ORDER BY n DESC LIMIT ?", (l, tail))[::-1]
             counts = s.q1("SELECT COUNT(*) n, SUM(result='NOK') nok FROM asm_units WHERE line_id=?", (l,))
             fc = self.fc.get(l) or {}
@@ -390,6 +453,7 @@ class Engine:
             lines[l] = dict(series=rows, count=counts["n"], nok=counts["nok"] or 0, forecast=fc, locked=prm,
                             evaluation=self.evaluation(l), first_nok=self._first_nok(l),
                             alarm=self.mon[l].alarm, last_unit=self.last_unit.get(l),
+                            first_failure_alert=self._first_failure_alert(l, rows[-1]["received_at"] if rows else None),
                             cursor=self.cursor.get(l))
         bag = s.q("SELECT raw_seq i, lot_id lot, port_id_in v FROM bag_meas ORDER BY raw_seq DESC LIMIT ?", (tail,))[::-1]
         pvc = s.q("SELECT raw_seq i, reel_id reel, outer_diameter_in od, inner_diameter_in idd, wall_difference_in wd "

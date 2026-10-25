@@ -18,6 +18,7 @@ import mock_simulator  # noqa: E402
 from app.client import extract_records  # noqa: E402
 from app.config import Config  # noqa: E402
 from app.engine import Engine, Reject  # noqa: E402
+from app.inference import TorchFirstFailureInference, first_failure_distribution  # noqa: E402
 from app.model import LineMonitor  # noqa: E402
 from app.store import Store, sha, unit_number  # noqa: E402
 
@@ -144,6 +145,148 @@ class TestModel(unittest.TestCase):
         m = LineMonitor("ASM-01", Config())
         self.feed(m, 1, 5, lambda i: 15.0, lambda i: 0.1)
         self.assertFalse(m.forecast()["ready"])
+
+
+class TestTorchInference(unittest.TestCase):
+    def test_hazards_convert_to_first_failure_distribution(self):
+        result = first_failure_distribution([0.5, 0.5, 0.0], last_n=100, unit_step=2)
+
+        self.assertEqual(result["first_failure_probabilities"], [0.5, 0.25, 0.0])
+        self.assertEqual(result["predicted_n"], 102)
+        self.assertEqual(result["mode_n"], 102)
+        self.assertTrue(result["has_estimate"])
+        self.assertAlmostEqual(result["p_within_horizon"], 0.75)
+
+    def test_hazards_reject_invalid_values(self):
+        for hazards in ([], [float("nan")], [1.1], [-0.1]):
+            with self.subTest(hazards=hazards), self.assertRaises(ValueError):
+                first_failure_distribution(hazards, last_n=10)
+
+    def test_torch_adapter_runs_model_and_checks_horizon(self):
+        class FakeTensor:
+            def __init__(self, values):
+                self.values = values
+                self.shape = (len(values),) if not values or not isinstance(values[0], list) else (
+                    len(values), len(values[0])
+                )
+
+            def to(self, _device):
+                return self
+
+            def __getitem__(self, index):
+                return FakeTensor(self.values[index])
+
+            def detach(self):
+                return self
+
+            def tolist(self):
+                return self.values
+
+        class FakeModel:
+            def to(self, _device):
+                return self
+
+            def eval(self):
+                return self
+
+            def __call__(self, _features):
+                return FakeTensor([[0.5, 0.5]])
+
+        fake_torch = type(
+            "FakeTorch",
+            (),
+            {
+                "cuda": type("Cuda", (), {"is_available": staticmethod(lambda: False)})(),
+                "device": staticmethod(lambda name: name),
+                "inference_mode": staticmethod(lambda: __import__("contextlib").nullcontext()),
+            },
+        )()
+        inference = TorchFirstFailureInference(
+            FakeModel(),
+            lambda rows, horizon, torch, device: FakeTensor([[1.0, 2.0]]),
+            torch_module=fake_torch,
+        )
+
+        result = inference.predict([{"n": 10}], horizon=2, last_n=10)
+
+        self.assertEqual(result["first_failure_probabilities"], [0.5, 0.25])
+        self.assertEqual(result["predicted_n"], 11)
+        with self.assertRaises(ValueError, msg="output horizon must match request"):
+            inference.predict([{"n": 10}], horizon=3, last_n=10)
+
+    def test_engine_keeps_statistical_forecast_when_model_is_absent(self):
+        cfg = Config(asm_lines=["ASM-01"], data_dir=tempfile.mkdtemp())
+        engine = Engine(cfg, client=object())
+
+        forecast = engine._forecast("ASM-01")
+
+        self.assertFalse(forecast["ready"])
+        self.assertEqual(forecast["first_failure_inference"]["status"], "unavailable")
+        self.assertFalse(forecast["first_failure_inference"]["used_for_locking"])
+
+    def test_engine_keeps_neural_result_advisory(self):
+        class FakeInference:
+            def predict(self, rows, horizon, last_n, unit_step):
+                return {"predicted_n": last_n + 1, "p_within_horizon": 0.9}
+
+        cfg = Config(asm_lines=["ASM-01"], data_dir=tempfile.mkdtemp())
+        engine = Engine(cfg, client=object(), first_failure_inference=FakeInference())
+        monitor = engine.mon["ASM-01"]
+        for index in range(40):
+            monitor.update(
+                dict(n=index + 1, depth=15.0, ame=0.1, pressure=3.8, speed=25.0, clearance_in=0.005)
+            )
+        statistical_prediction = monitor.forecast()["predicted_n"]
+
+        forecast = engine._forecast("ASM-01")
+
+        self.assertEqual(forecast["predicted_n"], statistical_prediction)
+        self.assertEqual(forecast["first_failure_inference"]["status"], "available")
+        self.assertFalse(forecast["first_failure_inference"]["used_for_locking"])
+
+
+class TestFirstFailureAlert(unittest.TestCase):
+    def setUp(self):
+        self.engine = Engine(Config(asm_lines=["ASM-01"], data_dir=tempfile.mkdtemp()), client=object())
+        self.line = "ASM-01"
+        self.engine.last_unit[self.line] = "UNIT-200341"
+
+    def test_snapshot_exposes_predicted_first_failure_with_unit_identity(self):
+        self.engine.fc[self.line] = dict(ready=True, alarm_active=True, has_estimate=True,
+                                         predicted_n=200350.4, confidence=0.72)
+
+        line = self.engine.snapshot()["lines"][self.line]
+        alert = line["first_failure_alert"]
+
+        self.assertEqual(alert["status"], "predicted")
+        self.assertEqual(alert["unit_id"], "UNIT-200350")
+        self.assertEqual(alert["last_unit"], "UNIT-200341")
+        self.assertEqual(alert["confidence"], 0.72)
+
+    def test_snapshot_suppresses_unready_stable_and_low_trust_forecasts(self):
+        forecasts = (
+            dict(ready=False, alarm_active=True, has_estimate=True),
+            dict(ready=True, alarm_active=False, has_estimate=True),
+            dict(ready=True, alarm_active=True, has_estimate=False),
+        )
+        for forecast in forecasts:
+            with self.subTest(forecast=forecast):
+                self.engine.fc[self.line] = forecast
+                self.assertIsNone(self.engine.snapshot()["lines"][self.line]["first_failure_alert"])
+
+    def test_confirmed_first_failure_escalates_alert(self):
+        self.engine.fc[self.line] = dict(ready=True, alarm_active=True, has_estimate=True,
+                                         predicted_n=200350, confidence=0.72)
+        self.engine.store.add_asm(dict(line_id=self.line, unit_id="UNIT-200345", n=200345,
+                                       visual_inspection_mm=17.4, result="NOK", raw_seq=1,
+                                       received_at="2026-10-25T10:00:00.000Z"))
+
+        alert = self.engine.snapshot()["lines"][self.line]["first_failure_alert"]
+
+        self.assertEqual(alert["status"], "confirmed")
+        self.assertEqual(alert["unit_id"], "UNIT-200345")
+        self.assertEqual(alert["depth_mm"], 17.4)
+        self.assertEqual(alert["updated_at"], "2026-10-25T10:00:00.000Z")
 
 
 class TestEngine(MockServerCase):
