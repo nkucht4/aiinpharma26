@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gate 3 Digital Twin</title>
+<style>
+:root{
+  --bg:#f5f6f8; --panel:#ffffff; --ink:#1b2430; --muted:#657083; --line:#dfe3ea;
+  --ok:#1f9d63; --bad:#d6334a; --warn:#d98a0b; --info:#2c6fdb; --accent:#2c6fdb; --soft:#eef2fa;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --bg:#0f141b; --panel:#171e28; --ink:#e7ecf3; --muted:#93a0b4; --line:#2a3443; --soft:#1d2733;
+         --ok:#35c283; --bad:#ff5d73; --warn:#f0a63a; --info:#6aa2ff; --accent:#6aa2ff; }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+h1{font-size:16px;margin:0;font-weight:650}
+.badge{padding:2px 9px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid var(--line);background:var(--soft)}
+.badge.rt{background:#fde8eb;color:#a2152c;border-color:#f6bcc5}
+@media (prefers-color-scheme: dark){.badge.rt{background:#3a1820;color:#ff9aa9;border-color:#5a2733}}
+.badge.ok{color:var(--ok)} .badge.bad{color:var(--bad)} .badge.warn{color:var(--warn)}
+.spacer{flex:1}
+button,select,input{font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:5px 10px}
+button{cursor:pointer} button:hover:not(:disabled){border-color:var(--accent)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button:disabled{opacity:.45;cursor:not-allowed}
+nav{display:flex;gap:4px;padding:8px 16px 0;border-bottom:1px solid var(--line);background:var(--panel);flex-wrap:wrap}
+nav button{border:0;border-bottom:3px solid transparent;border-radius:0;background:none;padding:8px 14px;color:var(--muted)}
+nav button.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+main{padding:16px;max-width:1500px;margin:0 auto}
+.grid{display:grid;gap:12px}
+.g3{grid-template-columns:repeat(auto-fit,minmax(340px,1fr))}
+.g2{grid-template-columns:repeat(auto-fit,minmax(480px,1fr))}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.card h2{font-size:13px;margin:0 0 8px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+.kpi .v{font-size:22px;font-weight:650;line-height:1.2} .kpi .s{color:var(--muted);font-size:12px}
+.chart{position:relative;height:300px}.chart.sm{height:210px}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{text-align:left;padding:5px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--panel)}
+.scroll{max-height:340px;overflow:auto}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}.muted{color:var(--muted)}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.hidden{display:none}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;font-weight:600;background:var(--soft)}
+.pill.bad{background:#fde8eb;color:#a2152c}.pill.ok{background:#e2f5ec;color:#126b43}.pill.warn{background:#fdf0d8;color:#8a5600}
+@media (prefers-color-scheme: dark){.pill.bad{background:#3a1820;color:#ff9aa9}.pill.ok{background:#12301f;color:#7ee0aa}.pill.warn{background:#3a2c10;color:#f5c26b}}
+#toast{position:fixed;right:16px;bottom:16px;background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:8px;max-width:460px;display:none;z-index:10}
+</style>
+</head>
+<body>
+<header>
+  <h1>Gate 3 · Digital Twin</h1>
+  <span id="modeBadge" class="badge">–</span>
+  <span class="badge" id="teamBadge">–</span>
+  <span class="badge" id="engBadge">idle</span>
+  <span class="spacer"></span>
+  <label class="row muted">every <input id="ivl" type="number" min="0.2" step="0.5" style="width:70px"> s</label>
+  <label class="row muted">batch <select id="batch"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></label>
+  <label class="row muted"><input type="checkbox" id="auto"> auto-lock</label>
+  <button id="bStep">Step</button>
+  <button id="bRun" class="primary">Start</button>
+</header>
+<nav id="tabs"></nav>
+<main>
+  <div id="err" class="card bad hidden" style="margin-bottom:12px"></div>
+  <section id="v-overview"></section>
+  <section id="v-lines"></section>
+  <section id="v-materials" class="hidden"></section>
+  <section id="v-events" class="hidden"></section>
+  <section id="v-evidence" class="hidden"></section>
+</main>
+<div id="toast"></div>
+<script src="/chart.umd.js"></script>
+<script>
+"use strict";
+const $ = (s, r=document) => r.querySelector(s);
+const el = (tag, attrs={}, ...kids) => { const e=document.createElement(tag); for(const [k,v] of Object.entries(attrs)){ if(k==="class") e.className=v; else if(k==="html") e.innerHTML=v; else if(k.startsWith("on")) e.addEventListener(k.slice(2),v); else e.setAttribute(k,v);} for(const c of kids){ if(c==null) continue; e.append(c.nodeType?c:document.createTextNode(c)); } return e; };
+const fmt = (v,d=2) => v==null||isNaN(v) ? "–" : Number(v).toFixed(d);
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+let S = null, tab = "overview", charts = {}, busy = false;
+const LINES = () => Object.keys(S.lines);
+
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.style.display="block"; clearTimeout(toast.t); toast.t=setTimeout(()=>t.style.display="none",5000); }
+async function api(path, body){
+  const r = await fetch(path, body ? {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)} : {});
+  const j = await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||r.statusText); return j;
+}
+
+/* ------------------------------------------------------------------ charts */
+function chart(id, cfg){
+  const c = document.getElementById(id); if(!c) return null;
+  if(charts[id] && charts[id].canvas !== c){ charts[id].destroy(); delete charts[id]; }
+  if(!charts[id]){ charts[id] = new Chart(c, cfg); } return charts[id];
+}
+const baseOpts = (xt="unit number") => ({
+  animation:false, responsive:true, maintainAspectRatio:false, parsing:false, normalized:true,
+  interaction:{mode:"nearest", intersect:false},
+  plugins:{legend:{labels:{boxWidth:10, usePointStyle:true, filter:i=>!i.text.startsWith("_")}}, tooltip:{enabled:true}},
+  scales:{x:{type:"linear", title:{display:true,text:xt}, grid:{color:css("--line")}, ticks:{color:css("--muted")}},
+          y:{grid:{color:css("--line")}, ticks:{color:css("--muted")}}}
+});
+function hline(label, y, x0, x1, color, dash=[6,4]){ return {label, data:[{x:x0,y},{x:x1,y}], borderColor:color, borderWidth:1.2, borderDash:dash, pointRadius:0, type:"line"}; }
+function vline(label, x, y0, y1, color){ return {label, data:[{x,y:y0},{x,y:y1}], borderColor:color, borderWidth:2, pointRadius:0, type:"line"}; }
+
+function depthChart(l){
+  const L = S.lines[l], cfg=S.config, ser=L.series; if(!ser.length) return;
+  const fc=L.forecast||{}, curve=(fc.curve||[]);
+  const x0=ser[0].n, xl=ser[ser.length-1].n;
+  const x1 = Math.max(xl, curve.length? curve[Math.min(curve.length-1, 70)][0] : xl);
+  const ds=[
+    {label:"depth OK/NOK (mm)", type:"line", data:ser.map(r=>({x:r.n,y:r.d})), borderColor:css("--info"), borderWidth:1, pointRadius:2.5,
+      pointBackgroundColor:ser.map(r=>r.result==="NOK"?css("--bad"):css("--info")), pointBorderColor:ser.map(r=>r.result==="NOK"?css("--bad"):css("--info")), order:2},
+    hline("LSL", cfg.lsl, x0, x1, css("--bad")), hline("USL", cfg.usl, x0, x1, css("--bad")), hline("target", cfg.target, x0, x1, css("--muted"), [2,3])
+  ];
+  const ymin=Math.min(cfg.lsl-1.5, ...ser.map(r=>r.d)), ymax=Math.max(cfg.usl+1.5, ...ser.map(r=>r.d));
+  if(curve.length && !L.first_nok && fc.alarm_active){
+    const cv=curve.filter(c=>c[0]<=x1+1);
+    ds.push({label:"forecast", type:"line", data:[{x:xl,y:fc.level}].concat(cv.map(c=>({x:c[0],y:c[1]}))), borderColor:css("--warn"), borderDash:[5,3], pointRadius:0, borderWidth:1.6});
+    ds.push({label:"_hi", type:"line", data:cv.map(c=>({x:c[0],y:c[1]+2*c[2]})), borderColor:"transparent", backgroundColor:"rgba(217,138,11,.13)", pointRadius:0, fill:"+1"});
+    ds.push({label:"_lo", type:"line", data:cv.map(c=>({x:c[0],y:c[1]-2*c[2]})), borderColor:"transparent", pointRadius:0});
+  }
+  (L.locked||[]).forEach((p,i)=>ds.push(vline(i? "locked prediction "+(i+1) : "locked prediction X", p.predicted_n, ymin, ymax, css("--accent"))));
+  if(L.first_nok) ds.push(vline("first failing unit Z", L.first_nok.n, ymin, ymax, css("--bad")));
+  if(L.alarm) ds.push(vline("de-calibration alarm", L.alarm.n, ymin, ymax, css("--warn")));
+  const o=baseOpts("unit number"); o.scales.y.title={display:true,text:"insertion depth (mm)"}; o.scales.y.min=ymin; o.scales.y.max=ymax;
+  o.scales.x.min=Math.max(x0, xl-300); o.scales.x.max=Math.max(x1, ...(L.locked||[]).map(p=>p.predicted_n))+2;
+  const c=chart("cd-"+l,{type:"line",data:{datasets:ds},options:o});
+  if(c){ c.data.datasets=ds; const sx=c.options.scales.x, sy=c.options.scales.y; sx.min=o.scales.x.min; sx.max=o.scales.x.max; sy.min=ymin; sy.max=ymax; c.update("none"); }
+}
+function processChart(l){
+  const ser=S.lines[l].series; if(!ser.length) return;
+  const mk=(label,key,color,axis,scale=1)=>({label,type:"line",yAxisID:axis,data:ser.filter(r=>r[key]!=null).map(r=>({x:r.n,y:r[key]*scale})),borderColor:color,borderWidth:1.2,pointRadius:0});
+  const ds=[mk("axis following error (mm)","ame",css("--warn"),"y"), mk("clearance port ID − tube OD (×10⁻³ in)","c",css("--ok"),"y1",1000)];
+  const o=baseOpts("unit number"); o.scales.y.title={display:true,text:"following error (mm)"};
+  o.scales.y1={position:"right",grid:{drawOnChartArea:false},ticks:{color:css("--muted")},title:{display:true,text:"clearance (mil)"}};
+  const c=chart("cp-"+l,{type:"line",data:{datasets:ds},options:o}); if(c){ c.data.datasets=ds; c.update("none"); }
+}
+
+/* ------------------------------------------------------------------ views */
+function kpi(label, value, sub, cls=""){ return el("div",{class:"card kpi"}, el("div",{class:"muted"},label), el("div",{class:"v "+cls},value), el("div",{class:"s"},sub||"")); }
+function statusOf(l){
+  const L=S.lines[l]; if(L.first_nok) return ["FAILED","bad"]; if(L.alarm && L.forecast && L.forecast.alarm_active) return ["DE-CALIBRATING","warn"];
+  if(!L.count) return ["WAITING","muted"]; return ["STABLE","ok"];
+}
+function predSummary(l){
+  const L=S.lines[l], ev=(L.evaluation||[])[0], p=(L.locked||[])[0];
+  if(!p) return null; return {p, ev};
+}
+
+function renderOverview(){
+  const box=$("#v-overview"); box.replaceChildren();
+  const g=el("div",{class:"grid g3"});
+  for(const l of LINES()){
+    const L=S.lines[l], [st,cl]=statusOf(l), ps=predSummary(l), fc=L.forecast||{};
+    const card=el("div",{class:"card"},
+      el("div",{class:"row"}, el("b",{},l), el("span",{class:"pill "+cl},st), el("span",{class:"spacer"}), el("button",{onclick:()=>setTab(l)},"open")),
+      el("div",{class:"row muted",style:"margin:6px 0"}, "units "+L.count, " · NOK "+L.nok, " · last "+(L.last_unit||"–"), fc.ready?(" · forecast "+Math.round(fc.predicted_n)):""),
+      el("div",{class:"chart sm"}, el("canvas",{id:"co-"+l})),
+      el("div",{style:"margin-top:8px"}, ps ? predLine(ps) : el("span",{class:"muted"}, L.first_nok?"No prediction was locked before the first failure":"No locked prediction yet")));
+    g.append(card);
+  }
+  box.append(g);
+  for(const l of LINES()) miniChart(l);
+  box.append(el("div",{class:"card",style:"margin-top:12px"}, el("h2",{},"BAG lots and PVC reels in production (latest)"), lotsTable(8)));
+}
+function predLine(ps){
+  const {p,ev}=ps; const parts=[el("span",{class:"mono"},"X="+p.predicted_unit_id+"  Y="+p.current_unit_id+"  L="+(p.predicted_n-p.current_n))];
+  if(ev && ev.Z){ parts.push(el("span",{class:"mono"},"  Z="+ev.Z+"  E="+ev.error_E)); parts.push(" "); parts.push(el("span",{class:"pill "+(ev.error_E===0?"ok":"warn")}, ev.status.replaceAll("_"," "))); }
+  else parts.push(el("span",{class:"pill"}, "locked · awaiting result"));
+  return el("div",{},...parts);
+}
+function miniChart(l){
+  const L=S.lines[l], ser=L.series, cfg=S.config; if(!ser.length) return;
+  const x0=ser[0].n, xl=ser[ser.length-1].n;
+  const ds=[{label:"depth",type:"line",data:ser.map(r=>({x:r.n,y:r.d})),borderColor:css("--info"),borderWidth:1,pointRadius:ser.map(r=>r.result==="NOK"?3:0),pointBackgroundColor:css("--bad"),borderWidth:1},
+    hline("_lsl",cfg.lsl,x0,xl,css("--bad")),hline("_usl",cfg.usl,x0,xl,css("--bad"))];
+  const o=baseOpts("unit"); o.plugins.legend.display=false;
+  const win=ser.slice(-200), ymin=Math.min(cfg.lsl-1.5,...win.map(r=>r.d)), ymax=Math.max(cfg.usl+1.5,...win.map(r=>r.d));
+  o.scales.x.min=Math.max(x0,xl-200); o.scales.y.min=ymin; o.scales.y.max=ymax;
+  const c=chart("co-"+l,{type:"line",data:{datasets:ds},options:o});
+  if(c){ c.data.datasets=ds; const sx=c.options.scales.x, sy=c.options.scales.y; sx.min=o.scales.x.min; sy.min=ymin; sy.max=ymax; c.update("none"); }
+}
+
+function renderLines(){
+  const box=$("#v-lines");
+  if(!LINES().includes(tab)){ box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  const l=tab, L=S.lines[l], fc=L.forecast||{}, [st,cl]=statusOf(l), ev=(L.evaluation||[])[0], p=(L.locked||[])[0];
+  // keep inputs / canvases alive between refreshes: rebuild only text parts
+  if(!box.dataset.line || box.dataset.line!==l){
+    box.dataset.line=l; box.replaceChildren(
+      el("div",{id:"lk"}), el("div",{class:"grid g2"},
+        el("div",{class:"card"},el("h2",{},"Insertion depth, forecast and locked prediction"),el("div",{class:"chart"},el("canvas",{id:"cd-"+l}))),
+        el("div",{class:"card"},el("h2",{},"Leading indicators"),el("div",{class:"chart"},el("canvas",{id:"cp-"+l})))),
+      el("div",{class:"card",style:"margin-top:12px"},el("h2",{},"Latest completed units (traceable to bag lot and tubing reel)"),el("div",{id:"ut",class:"scroll"})));
+  }
+  const k=el("div",{});
+  k.append(el("div",{class:"row",style:"margin-bottom:10px"}, el("h1",{style:"font-size:20px"},l), el("span",{class:"pill "+cl},st), el("span",{class:"muted"}, fc.alarm?("alarm at unit "+fc.alarm.n+" · "+fc.alarm.kind):"no de-calibration alarm")));
+  const kp=el("div",{class:"kpis"});
+  kp.append(kpi("Units inspected", L.count, "NOK "+L.nok+(L.count?" ("+fmt(100*L.nok/L.count,1)+"%)":"")));
+  kp.append(kpi("Last unit", L.last_unit||"–", L.series.length?("depth "+fmt(L.series[L.series.length-1].d)+" mm"):""));
+  const drift=fc.ready&&fc.alarm_active;
+  kp.append(kpi("Forecast first failure", L.first_nok?"failure observed":(drift?("UNIT "+Math.round(fc.predicted_n)):(fc.ready?"no drift detected":"–")), L.first_nok?"forecast closed":(drift?("confidence ±5 units: "+fmt(100*fc.confidence,0)+"% · trend z "+fmt(fc.trend_z,1)):(fc.ready?("low-trust estimate "+Math.round(fc.predicted_n)):(fc.reason||""))), drift||L.first_nok?"":"muted"));
+  kp.append(kpi("Locked prediction X", p?p.predicted_unit_id:"not locked", p?("Y="+p.current_unit_id+" · lead L="+(p.predicted_n-p.current_n)+" units · "+p.predicted_at):"", p?"":"muted"));
+  kp.append(kpi("Actual first failure Z", L.first_nok?L.first_nok.unit_id:"–", L.first_nok?("depth "+fmt(L.first_nok.visual_inspection_mm)+" mm"):"none yet", L.first_nok?"bad":""));
+  kp.append(kpi("Prediction error E=|Z−X|", ev&&ev.error_E!=null?ev.error_E+" units":"–", ev?ev.status.replaceAll("_"," "):"", ev&&ev.error_E===0?"ok":""));
+  k.append(kp);
+  const can = !p && !L.first_nok && L.count>0;
+  const inp=el("input",{type:"number",id:"lkn",style:"width:130px",placeholder:"unit number"});
+  const prev=$("#lkn"); const keep=prev?prev.value:"";
+  k.append(el("div",{class:"card",style:"margin-bottom:12px"}, el("h2",{},"Commit prediction (immutable once locked)"),
+    el("div",{class:"row"}, el("button",{class:"primary",disabled:!(can&&fc.ready),onclick:()=>lock(l)},"Lock forecast"+(fc.ready&&can?" ("+Math.round(fc.predicted_n)+")":"")),
+      el("span",{class:"muted"},"or custom unit number:"), inp, el("button",{disabled:!can,onclick:()=>lock(l,+$("#lkn").value)},"Lock custom"),
+      el("span",{class:"muted"}, p?"Locked — it cannot be changed.":(L.first_nok?"Too late: a failure was already inspected.":"Must be at least "+S.config.min_lead+" unit(s) ahead of the last inspected unit.")))));
+  inp.value=keep;
+  const lk=$("#lk"); lk.replaceChildren(k);
+  depthChart(l); processChart(l);
+  const rows=L.series.slice(-14).reverse();
+  $("#ut").replaceChildren(el("table",{},el("thead",{},el("tr",{},...["unit","depth mm","result","following err mm","clearance mil","bag lot","tubing reel"].map(h=>el("th",{},h)))),
+    el("tbody",{},...rows.map(r=>el("tr",{},el("td",{class:"mono"},r.unit_id),el("td",{},fmt(r.d)),el("td",{class:r.result==="NOK"?"bad":"ok"},r.result||"–"),el("td",{},fmt(r.ame,3)),el("td",{},r.c==null?"–":fmt(r.c*1000,2)),el("td",{class:"mono"},r.bag_lot_id||"–"),el("td",{class:"mono"},r.reel_id||"–"))))));
+}
+async function lock(l,n){
+  try{ const r=await api("/api/lock",{line:l,predicted_n:n||null,source:"manual"}); toast("Locked "+r.predicted_unit_id+" for "+l+" (Y="+r.current_unit_id+")"); refresh(); }
+  catch(e){ toast("Not locked: "+e.message); }
+}
+
+function lotsTable(maxRows){
+  const b=S.lots.bag_lots.slice(-maxRows).reverse(), r=S.lots.reels.slice(-maxRows).reverse();
+  const t1=el("table",{},el("thead",{},el("tr",{},...["BAG lot","bags","mean port ID in","min","max","out of spec","units built","NOK","lines"].map(h=>el("th",{},h)))),
+    el("tbody",{},...b.map(x=>el("tr",{},el("td",{class:"mono"},x.lot_id),el("td",{},x.n),el("td",{},fmt(x.mean,5)),el("td",{},fmt(x.mn,4)),el("td",{},fmt(x.mx,4)),el("td",{class:x.out_of_spec?"bad":""},x.out_of_spec||0),el("td",{},x.units),el("td",{class:x.nok?"bad":""},x.nok),el("td",{},x.lines||"–")))));
+  const t2=el("table",{},el("thead",{},el("tr",{},...["PVC reel","PVC lot","records","mean OD in","min OD","max OD","OD out of spec","mean ID","units built","NOK","lines"].map(h=>el("th",{},h)))),
+    el("tbody",{},...r.map(x=>el("tr",{},el("td",{class:"mono"},x.reel_id),el("td",{class:"mono"},x.lot_id),el("td",{},x.n),el("td",{},fmt(x.od_mean,4)),el("td",{},fmt(x.od_min,4)),el("td",{},fmt(x.od_max,4)),el("td",{class:x.od_out?"bad":""},x.od_out||0),el("td",{},fmt(x.id_mean,4)),el("td",{},x.units),el("td",{class:x.nok?"bad":""},x.nok),el("td",{},x.lines||"–")))));
+  return el("div",{},el("div",{class:"scroll"},t1),el("div",{class:"scroll",style:"margin-top:10px"},t2));
+}
+function renderMaterials(){
+  const box=$("#v-materials"); const cfg=S.config;
+  if(!box.dataset.built){ box.dataset.built=1; box.append(el("div",{class:"grid g2"},
+    el("div",{class:"card"},el("h2",{},"Bag Port inside diameter (in)"),el("div",{class:"chart sm"},el("canvas",{id:"cb"}))),
+    el("div",{class:"card"},el("h2",{},"PVC tubing outside / inside diameter (in)"),el("div",{class:"chart sm"},el("canvas",{id:"cv"})))), el("div",{id:"lt",class:"card",style:"margin-top:12px"})); }
+  $("#lt").replaceChildren(el("h2",{},"BAG lots and PVC reels used in production"),lotsTable(30));
+  const bag=S.bag; if(bag.length){ const x0=bag[0].i,x1=bag[bag.length-1].i;
+    const ds=[{label:"port ID",type:"line",data:bag.map(r=>({x:r.i,y:r.v})),showLine:false,pointRadius:1.8,backgroundColor:bag.map(r=>(r.v<cfg.bag[0]||r.v>cfg.bag[1])?css("--bad"):css("--info")),borderColor:"transparent"},
+      hline("LSL",cfg.bag[0],x0,x1,css("--bad")),hline("USL",cfg.bag[1],x0,x1,css("--bad"))];
+    const o=baseOpts("measurement sequence"); const c=chart("cb",{type:"line",data:{datasets:ds},options:o}); if(c){c.data.datasets=ds;c.update("none");} }
+  const pvc=S.pvc; if(pvc.length){ const x0=pvc[0].i,x1=pvc[pvc.length-1].i;
+    const ds=[{label:"OD",type:"line",data:pvc.map(r=>({x:r.i,y:r.od})),borderColor:css("--info"),borderWidth:1,pointRadius:0,yAxisID:"y"},
+      {label:"ID",type:"line",data:pvc.map(r=>({x:r.i,y:r.idd})),borderColor:css("--ok"),borderWidth:1,pointRadius:0,yAxisID:"y1"},
+      hline("OD LSL",cfg.od[0],x0,x1,css("--bad")),hline("OD USL",cfg.od[1],x0,x1,css("--bad"))];
+    const o=baseOpts("measurement sequence"); o.scales.y.title={display:true,text:"OD"}; o.scales.y1={position:"right",grid:{drawOnChartArea:false},ticks:{color:css("--muted")},title:{display:true,text:"ID"}};
+    const c=chart("cv",{type:"line",data:{datasets:ds},options:o}); if(c){c.data.datasets=ds;c.update("none");} }
+}
+const MISSED=new Set(["MISSING_UNITS","OUT_OF_ORDER_UNIT","ERROR"]);
+function renderEvents(){
+  const box=$("#v-events"); const rows=S.audit;
+  const cls=t=>t==="DECALIBRATION_ALARM"?"warn":t==="FIRST_NONCONFORMING_UNIT"?"bad":t==="PREDICTION_LOCKED"?"ok":MISSED.has(t)?"bad":"";
+  box.replaceChildren(el("div",{class:"card"},el("h2",{},"Event log — every alarm, lock, failure and missed point (append-only, hash-chained)"),
+    el("div",{class:"scroll",style:"max-height:70vh"},el("table",{},el("thead",{},el("tr",{},...["time (UTC)","event","line","unit","detail"].map(h=>el("th",{},h)))),
+      el("tbody",{},...rows.map(r=>{ let d=r.detail; try{ const j=JSON.parse(r.detail); delete j.hash; d=Object.entries(j).map(([k,v])=>k+"="+(typeof v==="object"?JSON.stringify(v):v)).join("  "); }catch(e){}
+        const missedPred = r.type==="FIRST_NONCONFORMING_UNIT" && /"locked_prediction":null/.test(r.detail);
+        return el("tr",{},el("td",{class:"mono"},r.ts),el("td",{},el("span",{class:"pill "+cls(r.type)},r.type+(missedPred?" · NOT PREDICTED":""))),el("td",{},r.line_id||""),el("td",{class:"mono"},r.unit_id||""),el("td",{class:"mono"},d.slice(0,220)));}))))));
+}
+function renderEvidence(){
+  const box=$("#v-evidence");
+  if(!box.dataset.built){ box.dataset.built=1;
+    box.append(el("div",{class:"grid g2"},
+      el("div",{class:"card"},el("h2",{},"Data integrity check"),el("div",{class:"row"},el("button",{class:"primary",onclick:verify},"Verify hash chains now"),el("a",{href:"/api/export",target:"_blank"},"download full evidence export (JSON)")),el("div",{id:"vr",style:"margin-top:10px"})),
+      el("div",{class:"card"},el("h2",{},"Unit traceability (URS-DI-004)"),el("div",{class:"row"},el("input",{id:"tu",placeholder:"UNIT-200341",class:"mono"}),el("button",{onclick:trace},"Trace")),el("div",{id:"tr",style:"margin-top:10px"}))));
+  }
+}
+async function verify(){ const v=await api("/api/verify"); $("#vr").replaceChildren(el("div",{class:v.ok?"ok":"bad",style:"font-weight:600"},v.ok?"✔ all chains intact · "+v.checked_at:"✘ INTEGRITY FAILURE"),
+  el("table",{},el("tbody",{},...Object.entries(v.tables).map(([k,t])=>el("tr",{},el("td",{},k),el("td",{},t.rows+" rows"),el("td",{class:t.ok?"ok":"bad"},t.ok?"ok":t.error),el("td",{class:"mono muted"},(t.head||"").slice(0,16))))))); }
+async function trace(){ const id=$("#tu").value.trim(); try{ const t=await api("/api/trace?unit_id="+encodeURIComponent(id)); const u=t.unit;
+  const kv=(k,v)=>el("tr",{},el("td",{class:"muted"},k),el("td",{class:"mono"},v==null?"–":String(v)));
+  $("#tr").replaceChildren(el("table",{},el("tbody",{},kv("unit / line",u.unit_id+" / "+u.line_id),kv("inspection",fmt(t.inspection.depth_mm)+" mm → "+t.inspection.result+" (spec "+t.inspection.lsl+"–"+t.inspection.usl+")"),
+    kv("source record",t.source_record.record_uid+" · req "+t.source_record.request_id),kv("record sha256",t.source_record.payload_sha256.slice(0,24)+"…"),kv("received (UTC)",t.source_record.received_at),
+    kv("bag lot",t.bag_lot.lot_id+" · "+t.bag_lot.n+" bags · mean "+fmt(t.bag_lot.mean,5)+" · out of spec "+(t.bag_lot.out||0)),
+    kv("tubing reel",t.pvc_reel.reel_id+" · "+t.pvc_reel.n+" records · mean OD "+fmt(t.pvc_reel.od_mean,4)+" · OD out of spec "+(t.pvc_reel.od_out||0)),
+    kv("tubing lot",t.pvc_lot.lot_id),kv("locked prediction",t.predictions.map(p=>p.predicted_unit_id+" (Y="+p.current_unit_id+")").join(", ")||"none"),
+    kv("evaluation",t.evaluation.map(e=>e.status+" E="+e.error_E+" L="+e.lead_time_L).join(", ")||"–"))));
+ }catch(e){ $("#tr").textContent=e.message; } }
+
+/* ------------------------------------------------------------------ shell */
+function setTab(t){ tab=t; $("#v-lines").dataset.line=""; draw(); }
+function drawTabs(){
+  const names=[["overview","Overview"],...LINES().map(l=>[l,l]),["materials","Bags & PVC reels"],["events","Events"],["evidence","Integrity & trace"]];
+  const nav=$("#tabs"); nav.replaceChildren(...names.map(([k,t])=>el("button",{class:k===tab?"on":"",onclick:()=>setTab(k)},t)));
+}
+function draw(){
+  if(!S) return; drawTabs();
+  for(const id of ["overview","materials","events","evidence"]) $("#v-"+id).classList.toggle("hidden",tab!==id);
+  if(tab==="overview") renderOverview(); else if(LINES().includes(tab)) renderLines(); else $("#v-lines").classList.add("hidden");
+  if(tab==="materials") renderMaterials(); if(tab==="events") renderEvents(); if(tab==="evidence") renderEvidence();
+  const c=S.config, e=S.engine;
+  const mb=$("#modeBadge"); mb.textContent=c.mode; mb.className="badge"+(c.mode==="REALTIME"?" rt":"");
+  $("#teamBadge").textContent=c.team; const eb=$("#engBadge"); eb.textContent=e.running?"polling":"paused"; eb.className="badge "+(e.running?"ok":"warn");
+  $("#bRun").textContent=e.running?"Pause":"Start";
+  if(document.activeElement!==$("#ivl")) $("#ivl").value=c.poll_interval;
+  if(document.activeElement!==$("#batch")) $("#batch").value=c.asm_batch;
+  $("#auto").checked=c.auto_lock;
+  const er=$("#err"); if(e.last_error){ er.textContent="Simulator / poller: "+e.last_error; er.classList.remove("hidden"); } else er.classList.add("hidden");
+}
+async function refresh(){ if(busy) return; busy=true; try{ S=await api("/api/state"); draw(); }catch(e){ $("#err").textContent="Dashboard cannot reach the twin: "+e.message; $("#err").classList.remove("hidden"); } busy=false; }
+$("#bRun").onclick=async()=>{ await api("/api/control",{action:S&&S.engine.running?"pause":"start"}); refresh(); };
+$("#bStep").onclick=async()=>{ try{ await api("/api/control",{action:"step"}); }catch(e){ toast(e.message);} refresh(); };
+$("#ivl").onchange=async e=>{ await api("/api/control",{action:"settings",interval:+e.target.value}); };
+$("#batch").onchange=async e=>{ await api("/api/control",{action:"settings",batch:+e.target.value}); };
+$("#auto").onchange=async e=>{ await api("/api/control",{action:"settings",auto_lock:e.target.checked}); refresh(); };
+refresh(); setInterval(refresh,1500);
+</script>
+</body>
+</html>
