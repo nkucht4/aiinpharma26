@@ -15,9 +15,10 @@ def _env(name, default, cast=str):
 
 class Config:
     def __init__(self, **overrides):
-        # ---- REST simulator -------------------------------------------------
+        # ---- simulator connection (REST or WebSocket) -----------------------
         self.base_url = _env("SIM_BASE_URL", "https://manufacturingsimulator.onrender.com/simulator")
         self.path_tpl = _env("SIM_PATH", "/lines/{line}/modes/{mode}/teams/{team}/codes/{code}")
+        self.use_websocket = _env("USE_WEBSOCKET", False, bool)    # Use WebSocket instead of REST
         self.mode = _env("MODE", "HISTORICAL").upper()            # HISTORICAL | REALTIME
         self.team_id = _env("TEAM_ID", "TEAM-01")                  # {teamId} in the URL (CONFIRM with probe.py)
         self.code = _env("CODE", "team01")                         # {code}: accessCode / REALTIME passcode

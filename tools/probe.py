@@ -2,7 +2,8 @@
 """Find out how the real simulator wants to be called (the spec does not show the response shape).
 
     python tools/probe.py                 # tries OpenAPI docs + HISTORICAL ids/codes from the spec
-    TEAM_ID=TEAM-01 CODE=team01 python tools/probe.py
+    TEAM_NO=2 python tools/probe.py       # tries Team 2 ids/codes
+    TEAM_ID=TEAM-02 CODE=team02 python tools/probe.py
 """
 import itertools
 import json
@@ -13,6 +14,14 @@ import urllib.request
 
 BASE = os.environ.get("SIM_BASE_URL", "https://manufacturingsimulator.onrender.com/simulator")
 ROOT = BASE.rsplit("/simulator", 1)[0]
+
+# TEAM_NO=2 expands to the likely ids/codes for that team number.
+_team_no = os.environ.get("TEAM_NO")
+if _team_no and "TEAM_ID" not in os.environ:
+    _n = _team_no.strip()
+    _z = _n.zfill(2)          # "2" -> "02"
+    os.environ.setdefault("TEAM_ID", "TEAM-%s" % _z)
+    os.environ.setdefault("CODE", "team%s" % _z)
 
 
 def get(url, timeout=90):
@@ -44,8 +53,21 @@ for p in ("/simulator/v3/api-docs", "/v3/api-docs", "/simulator/v3/api-docs/swag
         break
 
 print("\n== Trying identifiers for HISTORICAL ASM-01 (limit=1) ==")
-teams = [os.environ["TEAM_ID"]] if "TEAM_ID" in os.environ else ["TEAM-01", "01", "1", "A", "team01"]
-codes = [os.environ["CODE"]] if "CODE" in os.environ else ["team01", "01", "TEAM-01"]
+if "TEAM_ID" in os.environ:
+    teams = [os.environ["TEAM_ID"]]
+elif _team_no:
+    z = _team_no.strip().zfill(2)
+    teams = ["TEAM-%s" % z, z, _team_no.strip(), "team%s" % z]
+else:
+    teams = ["TEAM-01", "01", "1", "A", "team01"]
+
+if "CODE" in os.environ:
+    codes = [os.environ["CODE"]]
+elif _team_no:
+    z = _team_no.strip().zfill(2)
+    codes = ["team%s" % z, z, "TEAM-%s" % z]
+else:
+    codes = ["team01", "01", "TEAM-01"]
 found = None
 for t, c in itertools.product(teams, codes):
     url = "%s/lines/ASM-01/modes/HISTORICAL/teams/%s/codes/%s?limit=1" % (BASE, t, c)

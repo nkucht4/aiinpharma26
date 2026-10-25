@@ -8,12 +8,10 @@
 :root{
   --bg:#f5f6f8; --panel:#ffffff; --ink:#1b2430; --muted:#657083; --line:#dfe3ea;
   --ok:#1f9d63; --bad:#d6334a; --warn:#d98a0b; --info:#2c6fdb; --accent:#2c6fdb; --soft:#eef2fa;
-  --danger-bg:#fff0f1; --danger-ink:#8d1526; --danger-line:#ed6474;
 }
 @media (prefers-color-scheme: dark){
   :root{ --bg:#0f141b; --panel:#171e28; --ink:#e7ecf3; --muted:#93a0b4; --line:#2a3443; --soft:#1d2733;
-         --ok:#35c283; --bad:#ff5d73; --warn:#f0a63a; --info:#6aa2ff; --accent:#6aa2ff;
-         --danger-bg:#35151c; --danger-ink:#ffdce1; --danger-line:#a83347; }
+         --ok:#35c283; --bad:#ff5d73; --warn:#f0a63a; --info:#6aa2ff; --accent:#6aa2ff; }
 }
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
@@ -52,15 +50,6 @@ th{color:var(--muted);font-weight:600;position:sticky;top:0;background:var(--pan
 .pill.bad{background:#fde8eb;color:#a2152c}.pill.ok{background:#e2f5ec;color:#126b43}.pill.warn{background:#fdf0d8;color:#8a5600}
 @media (prefers-color-scheme: dark){.pill.bad{background:#3a1820;color:#ff9aa9}.pill.ok{background:#12301f;color:#7ee0aa}.pill.warn{background:#3a2c10;color:#f5c26b}}
 #toast{position:fixed;right:16px;bottom:16px;background:var(--ink);color:var(--bg);padding:10px 14px;border-radius:8px;max-width:460px;display:none;z-index:10}
-.first-failure-alerts{display:grid;gap:8px;margin-bottom:12px}
-.first-failure-alert{display:flex;align-items:center;gap:16px;padding:14px 16px;background:var(--danger-bg);color:var(--danger-ink);border:2px solid var(--danger-line);border-left-width:8px;border-radius:6px}
-.first-failure-copy{flex:1;min-width:0}
-.first-failure-label{font-size:12px;font-weight:750;text-transform:uppercase}
-.first-failure-unit{font-size:22px;font-weight:750;overflow-wrap:anywhere}
-.first-failure-detail{font-size:13px;overflow-wrap:anywhere}
-button.first-failure-action{flex:0 0 auto;min-height:48px;padding:10px 18px;background:var(--bad);border-color:var(--bad);color:#fff;font-weight:750}
-button.first-failure-action:hover:not(:disabled){background:var(--danger-ink);border-color:var(--danger-ink)}
-@media(max-width:600px){.first-failure-alert{align-items:stretch;flex-direction:column;gap:10px}.first-failure-action{width:100%}}
 </style>
 </head>
 <body>
@@ -78,7 +67,6 @@ button.first-failure-action:hover:not(:disabled){background:var(--danger-ink);bo
 </header>
 <nav id="tabs"></nav>
 <main>
-  <section id="firstFailureAlerts" class="first-failure-alerts" aria-live="assertive"></section>
   <div id="err" class="card bad hidden" style="margin-bottom:12px"></div>
   <section id="v-overview"></section>
   <section id="v-lines"></section>
@@ -94,11 +82,64 @@ const $ = (s, r=document) => r.querySelector(s);
 const el = (tag, attrs={}, ...kids) => { const e=document.createElement(tag); for(const [k,v] of Object.entries(attrs)){ if(k==="class") e.className=v; else if(k==="html") e.innerHTML=v; else if(k.startsWith("on")) e.addEventListener(k.slice(2),v); else e.setAttribute(k,v);} for(const c of kids){ if(c==null) continue; e.append(c.nodeType?c:document.createTextNode(c)); } return e; };
 const fmt = (v,d=2) => v==null||isNaN(v) ? "–" : Number(v).toFixed(d);
 const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
-let S = null, tab = "overview", charts = {}, busy = false;
+let S = null, tab = "overview", charts = {}, busy = false, ws = null, wsConnecting = false;
 const LINES = () => Object.keys(S.lines);
 
 function toast(msg){ const t=$("#toast"); t.textContent=msg; t.style.display="block"; clearTimeout(toast.t); toast.t=setTimeout(()=>t.style.display="none",5000); }
+
+function connectWebSocket(){
+  if(ws || wsConnecting) return Promise.resolve();
+  wsConnecting = true;
+  return new Promise((resolve, reject) => {
+    const proto = location.protocol === "https:" ? "wss:" : "ws:";
+    ws = new WebSocket(proto + "//" + location.host + "/ws");
+    ws.onopen = () => { wsConnecting = false; console.log("WebSocket connected"); resolve(); };
+    ws.onerror = (e) => { wsConnecting = false; reject(e); };
+    ws.onclose = () => { ws = null; wsConnecting = false; };
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if(msg.type === "state_update") { S = msg.data; draw(); }
+      } catch(err) { console.error("WebSocket message error:", err); }
+    };
+  });
+}
+
 async function api(path, body){
+  // Try WebSocket first, fall back to REST
+  try {
+    await connectWebSocket();
+    if(ws && ws.readyState === WebSocket.OPEN) {
+      return await new Promise((resolve, reject) => {
+        const msgId = "msg_" + Math.random().toString(36).substr(2, 9);
+        const cmd = path.split("/").pop();
+        const timeout = setTimeout(() => reject(new Error("WebSocket timeout")), 10000);
+        
+        const origOnMessage = ws.onmessage;
+        ws.onmessage = (e) => {
+          try {
+            const msg = JSON.parse(e.data);
+            if(msg.id === msgId) {
+              clearTimeout(timeout);
+              ws.onmessage = origOnMessage;
+              if(msg.type === "error") reject(new Error(msg.error));
+              else resolve(msg.data || msg);
+            }
+          } catch(err) { console.error("WebSocket message error:", err); }
+        };
+        
+        ws.send(JSON.stringify({
+          id: msgId,
+          cmd: cmd,
+          ...body
+        }));
+      });
+    }
+  } catch(e) {
+    console.warn("WebSocket unavailable, falling back to REST:", e.message);
+  }
+  
+  // Fallback to REST API
   const r = await fetch(path, body ? {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)} : {});
   const j = await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||r.statusText); return j;
 }
@@ -162,26 +203,6 @@ function statusOf(l){
 function predSummary(l){
   const L=S.lines[l], ev=(L.evaluation||[])[0], p=(L.locked||[])[0];
   if(!p) return null; return {p, ev};
-}
-
-function renderFirstFailureAlerts(){
-  const box=$("#firstFailureAlerts");
-  const alerts=LINES().map(l=>S.lines[l].first_failure_alert).filter(Boolean)
-    .sort((a,b)=>(a.status==="confirmed"?0:1)-(b.status==="confirmed"?0:1));
-  box.replaceChildren(...alerts.map(alert=>{
-    const confirmed=alert.status==="confirmed";
-    const confidence=alert.confidence==null?"":" · ±5-unit forecast confidence "+fmt(100*alert.confidence,0)+"%";
-    const updated=alert.updated_at?" · updated "+alert.updated_at:"";
-    const detail=confirmed
-      ? "Inspection confirmed first nonconforming unit"+(alert.depth_mm==null?"":" · depth "+fmt(alert.depth_mm)+" mm")+updated
-      : "Model predicts the first failing unit"+confidence+" · last received "+(alert.last_unit||"–")+updated;
-    return el("div",{class:"first-failure-alert",role:"alert"},
-      el("div",{class:"first-failure-copy"},
-        el("div",{class:"first-failure-label"},confirmed?"First failure confirmed":"First failure predicted"),
-        el("div",{class:"first-failure-unit"},alert.line_id+" · "+alert.unit_id),
-        el("div",{class:"first-failure-detail"},detail)),
-      el("button",{class:"first-failure-action",onclick:()=>setTab(alert.line_id)},"OPEN "+alert.line_id));
-  }));
 }
 
 function renderOverview(){
@@ -324,7 +345,6 @@ function drawTabs(){
 }
 function draw(){
   if(!S) return; drawTabs();
-  renderFirstFailureAlerts();
   for(const id of ["overview","materials","events","evidence"]) $("#v-"+id).classList.toggle("hidden",tab!==id);
   if(tab==="overview") renderOverview(); else if(LINES().includes(tab)) renderLines(); else $("#v-lines").classList.add("hidden");
   if(tab==="materials") renderMaterials(); if(tab==="events") renderEvents(); if(tab==="evidence") renderEvidence();

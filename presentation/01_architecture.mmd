@@ -1,0 +1,32 @@
+graph TB
+    subgraph Factory["🏭 Gate 3 Manufacturing Lines (Live)"]
+        S1["ASM-01 · Assembly Line 1"]
+        S2["ASM-02 · Assembly Line 2"]
+        S3["ASM-03 · Assembly Line 3"]
+        S4["BAG-01 · Bagging Line"]
+        S5["PVC-01 · PVC Extrusion Line"]
+    end
+
+    subgraph App["🖥️ Gate 3 Digital Twin (Python stdlib only)"]
+        CL["client.py\nHTTP + retry\nparses list/object/wrapped"]
+        EN["engine.py\nPoll loop\nJournal → Ingest → Lock\nEvaluation"]
+        ST["store.py\nSQLite append-only\nSHA-256 per record\nHash chain\nDB triggers block UPDATE/DELETE"]
+        MO["model.py\nLineMonitor per line\nEWMA alarm (axis error)\nCUSUM alarm (depth)\nRidge regression forecast"]
+        SV["server.py\nHTTP API :8000\n/api/state  /api/lock\n/api/verify  /api/control"]
+        WEB["web/index.html\nChart.js dashboard\nOverview · ASM tabs\nBags·PVC · Events\nIntegrity & trace"]
+        JNL[("data/*.jsonl\nRaw journal\n(written before DB)")]
+        DB[("data/*.db\nSQLite\nrequests · raw_events\nasm_units · bag_meas\npvc_meas · predictions\naudit")]
+    end
+
+    Factory -->|"GET ?startWith=N&limit=L\n(real-time stream)"| CL
+    CL --> EN
+    EN -->|"1. journal raw response"| JNL
+    EN -->|"2. ingest"| ST
+    ST --> DB
+    EN --> MO
+    MO -->|"alarm + forecast X"| EN
+    EN -->|"lock prediction"| ST
+    SV -->|"reads"| ST
+    SV -->|"reads"| EN
+    SV -->|"serves"| WEB
+    WEB -->|"polls /api/state every 3s"| SV

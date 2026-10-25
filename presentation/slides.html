@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gate 3 · Digital Twin — Presentation</title>
+<style>
+  :root {
+    --blue: #2c6fdb; --darkblue: #1a4a9e; --red: #d6334a; --green: #1f9d63;
+    --orange: #d98a0b; --bg: #0f1923; --panel: #16222e; --border: #2a3e52;
+    --text: #e8edf4; --muted: #7a92a8; --white: #ffffff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
+
+  /* SLIDE CONTAINER */
+  .deck { width: 100vw; height: 100vh; position: relative; }
+  .slide { position: absolute; inset: 0; display: none; flex-direction: column; padding: 48px 64px; }
+  .slide.active { display: flex; }
+
+  /* SLIDE TYPES */
+  .slide.cover { background: linear-gradient(135deg, #0a1520 0%, #162034 50%, #0d1f30 100%); justify-content: center; align-items: center; text-align: center; }
+  .slide.content { background: var(--bg); }
+  .slide.dark { background: var(--panel); }
+
+  /* TYPOGRAPHY */
+  h1 { font-size: 3.2rem; font-weight: 800; line-height: 1.1; color: var(--white); }
+  h1 span { color: var(--blue); }
+  h2 { font-size: 1.9rem; font-weight: 700; color: var(--white); margin-bottom: 28px; border-left: 5px solid var(--blue); padding-left: 16px; }
+  h3 { font-size: 1.2rem; font-weight: 700; color: var(--blue); margin-bottom: 10px; }
+  .subtitle { font-size: 1.3rem; color: var(--muted); margin-top: 16px; }
+  .tagline { font-size: 1.6rem; color: var(--blue); margin-top: 24px; font-weight: 600; }
+  p { color: var(--muted); line-height: 1.6; font-size: 1rem; }
+
+  /* GRID LAYOUTS */
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; flex: 1; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; flex: 1; }
+  .grid4 { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 16px; }
+  .col { display: flex; flex-direction: column; gap: 16px; }
+
+  /* CARDS */
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; }
+  .card.blue { border-left: 4px solid var(--blue); }
+  .card.green { border-left: 4px solid var(--green); }
+  .card.red { border-left: 4px solid var(--red); }
+  .card.orange { border-left: 4px solid var(--orange); }
+  .card h3 { margin-bottom: 8px; }
+  .card ul { list-style: none; padding: 0; }
+  .card ul li { color: var(--muted); font-size: 0.93rem; padding: 3px 0; }
+  .card ul li::before { content: "▸ "; color: var(--blue); }
+
+  /* BADGES */
+  .badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 700; }
+  .badge.blue { background: #1a3a6e; color: #7ab3ff; }
+  .badge.green { background: #0e3020; color: #5dd9a0; }
+  .badge.red { background: #3a0f18; color: #ff7a8a; }
+  .badge.orange { background: #3a2200; color: #ffb84d; }
+
+  /* TABLE */
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th { background: #1a2e40; color: var(--blue); padding: 10px 14px; text-align: left; font-size: 0.82rem; text-transform: uppercase; letter-spacing: .04em; }
+  td { padding: 9px 14px; border-bottom: 1px solid var(--border); color: var(--muted); vertical-align: top; }
+  tr:hover td { background: #1a2535; }
+  td.ok { color: var(--green); font-weight: 700; }
+  td strong { color: var(--text); }
+
+  /* CODE */
+  code { font-family: 'Cascadia Code', 'Consolas', monospace; background: #0a1520; border: 1px solid var(--border); border-radius: 6px; padding: 2px 8px; font-size: 0.85rem; color: #7ab3ff; }
+  .codeblock { background: #070f18; border: 1px solid var(--border); border-radius: 10px; padding: 20px 24px; font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 0.85rem; color: #a8c8f0; line-height: 1.8; flex: 1; }
+  .codeblock .kw { color: #569cd6; }
+  .codeblock .str { color: #ce9178; }
+  .codeblock .cm { color: #6a9955; }
+  .codeblock .fn { color: #dcdcaa; }
+
+  /* FLOW DIAGRAM */
+  .flow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 16px 0; }
+  .fbox { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 16px; text-align: center; font-size: 0.85rem; min-width: 100px; }
+  .fbox.blue { border-color: var(--blue); color: #7ab3ff; }
+  .fbox.green { border-color: var(--green); color: #5dd9a0; }
+  .fbox.orange { border-color: var(--orange); color: #ffb84d; }
+  .arrow { color: var(--muted); font-size: 1.2rem; }
+
+  /* SCORE BOXES */
+  .score-box { background: var(--panel); border-radius: 16px; padding: 28px; text-align: center; border: 2px solid var(--border); }
+  .score-box .pts { font-size: 3rem; font-weight: 800; line-height: 1; }
+  .score-box .label { font-size: 0.85rem; color: var(--muted); margin-top: 8px; }
+  .score-box .total { font-size: 1.1rem; color: var(--muted); margin-top: 4px; }
+
+  /* STATE BOXES */
+  .states { display: flex; align-items: center; gap: 0; flex: 1; }
+  .state { flex: 1; text-align: center; padding: 20px 12px; border-radius: 10px; position: relative; }
+  .state-arrow { font-size: 2rem; color: var(--muted); padding: 0 4px; align-self: center; }
+  .state .name { font-size: 1.1rem; font-weight: 700; margin-bottom: 6px; }
+  .state .desc { font-size: 0.78rem; color: var(--muted); }
+
+  /* FORMULA */
+  .formula { background: #070f18; border: 1px solid var(--blue); border-radius: 12px; padding: 20px 28px; text-align: center; }
+  .formula .eq { font-size: 1.6rem; font-weight: 700; color: var(--white); font-family: 'Cascadia Code', monospace; margin-bottom: 8px; }
+  .formula .def { font-size: 0.88rem; color: var(--muted); }
+
+  /* NAV */
+  nav { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 16px; background: rgba(22,34,46,0.95); border: 1px solid var(--border); border-radius: 999px; padding: 10px 24px; z-index: 100; backdrop-filter: blur(8px); }
+  nav button { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.1rem; padding: 4px 8px; border-radius: 6px; transition: color .15s; }
+  nav button:hover { color: var(--white); background: var(--border); }
+  #slideNum { font-size: 0.85rem; color: var(--muted); min-width: 60px; text-align: center; }
+  .dot-nav { display: flex; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); cursor: pointer; transition: background .2s; }
+  .dot.on { background: var(--blue); }
+
+  /* LOGO AREA */
+  .slide-num-badge { position: absolute; top: 20px; right: 28px; font-size: 0.75rem; color: var(--border); font-family: monospace; }
+
+  /* HIGHLIGHT ROW */
+  .hl { background: #1a2e40 !important; }
+  .hl td { color: var(--text) !important; }
+
+  /* ICON */
+  .icon { font-size: 2rem; margin-bottom: 8px; }
+
+  /* CHECKLIST */
+  .checklist { list-style: none; }
+  .checklist li { padding: 8px 0; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; gap: 12px; font-size: 0.95rem; color: var(--muted); }
+  .checklist li .num { background: var(--blue); color: white; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+  .checklist li strong { color: var(--text); }
+</style>
+</head>
+<body>
+<div class="deck">
+
+<!-- ═══════════════════════════════════════════════════════ SLIDE 1 — COVER -->
+<div class="slide cover active">
+  <div class="slide-num-badge">01 / 10</div>
+  <div style="max-width:800px">
+    <div style="font-size:0.9rem;color:var(--blue);letter-spacing:.15em;text-transform:uppercase;margin-bottom:16px">Gate III · Manufacturing Challenge</div>
+    <h1>Digital Twin<br><span>First-Failure Prediction</span></h1>
+    <div class="tagline">ASM-01 · ASM-02 · ASM-03</div>
+    <div class="subtitle" style="margin-top:32px">Team B &nbsp;·&nbsp; Team ID: 02 &nbsp;·&nbsp; Real-Time Assembly Monitoring</div>
+    <div style="margin-top:48px;display:flex;gap:20px;justify-content:center;flex-wrap:wrap">
+      <span class="badge blue">Python stdlib only</span>
+      <span class="badge green">15/15 Tests Pass</span>
+      <span class="badge orange">Zero pip install</span>
+      <span class="badge red">ALCOA+ Evidence Store</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ SLIDE 2 — PROBLEM -->
+<div class="slide content">
+  <div class="slide-num-badge">02 / 10</div>
+  <h2>The Problem</h2>
+  <div class="grid2" style="align-items:start;gap:32px">
+    <div class="col">
+      <div class="card blue">
+        <div class="icon">🏭</div>
+        <h3>Medical Device Assembly</h3>
+        <p>A catheter tube is inserted into a medical port. The insertion depth must be <strong style="color:var(--white)">13–17 mm</strong>. Any unit outside this range is defective.</p>
+      </div>
+      <div class="card red">
+        <div class="icon">⚠️</div>
+        <h3>The Failure Pattern</h3>
+        <p>Assembly lines drift over time due to material variation (bag port diameter, tube OD) and servo de-calibration. A gradual trend leads to the first failing unit — but it is predictable.</p>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card orange">
+        <div class="icon">🎯</div>
+        <h3>The Challenge</h3>
+        <ul>
+          <li>Monitor 3 assembly lines simultaneously in real time</li>
+          <li>Detect drift <em>before</em> a unit goes out of spec</li>
+          <li>Predict the exact unit number of the first failure (X)</li>
+          <li>Lock the prediction early — cannot be changed</li>
+          <li>Prove the evidence was not tampered with</li>
+        </ul>
+      </div>
+      <div class="card green">
+        <div class="icon">📐</div>
+        <h3>Spec</h3>
+        <table>
+          <tr><td><strong>Target</strong></td><td>15.0 mm</td></tr>
+          <tr><td><strong>LSL (min)</strong></td><td>13.0 mm</td></tr>
+          <tr><td><strong>USL (max)</strong></td><td>17.0 mm</td></tr>
+          <tr><td><strong>Bag Port ID</strong></td><td>0.173 – 0.176 in</td></tr>
+          <tr><td><strong>Tube OD</strong></td><td>0.1675 – 0.1725 in</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ SLIDE 3 — SOLUTION -->
+<div class="slide content">
+  <div class="slide-num-badge">03 / 10</div>
+  <h2>Our Solution</h2>
+  <div class="grid2" style="gap:32px;align-items:start">
+    <div>
+      <p style="font-size:1.05rem;color:var(--text);margin-bottom:20px">A <strong>Digital Twin</strong> — a live software copy of the assembly floor that connects to the simulator, stores every record with cryptographic integrity, detects drift, and predicts the first failure.</p>
+      <div class="flow">
+        <div class="fbox blue">Simulator<br>REST API</div>
+        <div class="arrow">→</div>
+        <div class="fbox">Ingest &<br>Journal</div>
+        <div class="arrow">→</div>
+        <div class="fbox">Hash-Chained<br>SQLite</div>
+        <div class="arrow">→</div>
+        <div class="fbox orange">Predict<br>First NOK</div>
+        <div class="arrow">→</div>
+        <div class="fbox green">Lock &<br>Evaluate</div>
+      </div>
+      <div style="margin-top:20px">
+        <div class="card blue" style="margin-bottom:14px">
+          <h3>Technology Choices</h3>
+          <ul>
+            <li><strong>Python stdlib only</strong> — runs on any laptop, zero install</li>
+            <li><strong>SQLite</strong> — durable, transactional, single file</li>
+            <li><strong>Chart.js 4.4.1</strong> — vendored, works offline</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card">
+        <h3>What it monitors</h3>
+        <table>
+          <tr><th>Source</th><th>Data</th><th>Records</th></tr>
+          <tr><td>ASM-01/02/03</td><td>Depth, pressure, speed, axis error</td><td>Live</td></tr>
+          <tr><td>BAG-01</td><td>Port ID diameter per lot</td><td>Up to 100</td></tr>
+          <tr><td>PVC-01</td><td>Tube OD/ID per reel</td><td>Up to 100</td></tr>
+        </table>
+      </div>
+      <div class="card green">
+        <h3>Key design decisions</h3>
+        <ul>
+          <li>Journal raw response to file <em>before</em> any DB write</li>
+          <li>SHA-256 hash chain — every record fingerprinted</li>
+          <li>DB triggers block UPDATE and DELETE at engine level</li>
+          <li>HISTORICAL and REALTIME use separate database files</li>
+          <li>Stateless API — app owns the cursor, restart-safe</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ SLIDE 4 — ARCHITECTURE -->
+<div class="slide content">
+  <div class="slide-num-badge">04 / 10</div>
+  <h2>Architecture</h2>
+  <div class="grid2" style="gap:32px">
+    <div>
+      <div class="codeblock" style="font-size:0.78rem">
+<span class="cm"># 5 modules, all pure Python stdlib</span>
+
+Simulator REST
+  ├─ BAG-01  (material lots)
+  ├─ PVC-01  (tubing reels)
+  └─ ASM-01/02/03 (assembly)
+        │
+        ▼
+<span class="fn">client.py</span>   <span class="cm">← HTTP, retry, shape-tolerant</span>
+        │
+        ▼
+<span class="fn">engine.py</span>   <span class="cm">← poll loop, journal, ingest</span>
+        │           <span class="cm">  lock rules, evaluation</span>
+   ┌────┴────┐
+   ▼         ▼
+<span class="fn">store.py</span>   <span class="fn">model.py</span>
+<span class="cm">SQLite      EWMA + CUSUM</span>
+<span class="cm">hash chain  ridge forecast</span>
+   │
+   ▼
+<span class="fn">server.py</span>  <span class="cm">← JSON API :8000</span>
+   │
+   ▼
+<span class="fn">web/index.html</span>  <span class="cm">← Chart.js dashboard</span>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card blue">
+        <h3>client.py</h3>
+        <p>HTTP with 4 retries. Accepts list, wrapped list, or single-object API responses — tolerant of shape changes.</p>
+      </div>
+      <div class="card">
+        <h3>engine.py</h3>
+        <p>Orchestrates everything: polling loop, writes journal (fsync) before DB, runs model, applies lock rules, evaluates E & L.</p>
+      </div>
+      <div class="card red">
+        <h3>store.py</h3>
+        <p>Append-only SQLite. SHA-256 per record. Hash chain across all tables. Triggers block UPDATE/DELETE at the database engine level.</p>
+      </div>
+      <div class="card orange">
+        <h3>model.py</h3>
+        <p>Pure functions. EWMA alarm on axis error. CUSUM alarm on depth. Ridge regression forecast with Gate 2 prior (+0.001 in clearance → +0.76 mm depth).</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ SLIDE 5 — PREDICTION MODEL -->
+<div class="slide content">
+  <div class="slide-num-badge">05 / 10</div>
+  <h2>Prediction Model</h2>
+  <div class="grid2" style="gap:32px">
+    <div class="col">
+      <div class="card orange">
+        <h3>Step 1 — De-calibration Alarm</h3>
+        <ul>
+          <li><strong>EWMA</strong> on axis following error → detects servo drift</li>
+          <li><strong>CUSUM</strong> on insertion depth → detects sustained trend toward spec limit</li>
+          <li>Need ≥ 30 units before forecasting starts</li>
+          <li>Both alarms can fire independently</li>
+        </ul>
+      </div>
+      <div class="card blue">
+        <h3>Step 2 — Ridge Regression Forecast</h3>
+        <ul>
+          <li>Features: bag/tube clearance, axis error, pressure, speed</li>
+          <li>Gate 2 prior: +0.001 in clearance → +0.76 mm depth</li>
+          <li>Recency-weighted linear trend on explained signal</li>
+          <li>Extrapolated with uncertainty band</li>
+        </ul>
+      </div>
+      <div class="card green">
+        <h3>Step 3 — First-Failure Distribution</h3>
+        <ul>
+          <li>P(failure) per future unit = P(depth outside 13–17mm)</li>
+          <li>f(k) = P_k × ∏(1 − P_j) for j &lt; k</li>
+          <li>Median of distribution = predicted unit <strong>X</strong></li>
+        </ul>
+      </div>
+    </div>
+    <div>
+      <div style="margin-bottom:20px">
+        <div class="states">
+          <div class="state" style="background:#0a1520;border:1px solid var(--border)">
+            <div class="name" style="color:var(--muted)">WAITING</div>
+            <div class="desc">0–29 units<br>no model yet</div>
+          </div>
+          <div class="state-arrow">→</div>
+          <div class="state" style="background:#0e2a1a;border:1px solid var(--green)">
+            <div class="name" style="color:var(--green)">STABLE</div>
+            <div class="desc">≥30 units<br>no drift</div>
+          </div>
+          <div class="state-arrow">→</div>
+          <div class="state" style="background:#2a1800;border:1px solid var(--orange)">
+            <div class="name" style="color:var(--orange)">ALARM</div>
+            <div class="desc">drift detected<br>forecast active</div>
+          </div>
+          <div class="state-arrow">→</div>
+          <div class="state" style="background:#0a1e3a;border:1px solid var(--blue)">
+            <div class="name" style="color:var(--blue)">LOCKED</div>
+            <div class="desc">X committed<br>immutable</div>
+          </div>
+        </div>
+      </div>
+      <div class="formula" style="margin-bottom:16px">
+        <div class="eq">X = median of first-failure distribution</div>
+        <div class="def">Predicted unit of first defect — locked before it arrives</div>
+      </div>
+      <div class="card" style="margin-top:0">
+        <h3>Auto-lock conditions</h3>
+        <ul>
+          <li>Alarm active on the line</li>
+          <li>Significant trend confirmed</li>
+          <li>3 consecutive confirmations</li>
+          <li>Confidence ≥ 0.65 (configurable)</li>
+          <li>X > last received unit + min_lead</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ SLIDE 6 — DATA INTEGRITY -->
+<div class="slide content">
+  <div class="slide-num-badge">06 / 10</div>
+  <h2>Data Integrity — ALCOA+</h2>
+  <div class="grid2" style="gap:32px">
+    <div>
+      <table style="margin-bottom:20px">
+        <thead><tr><th>URS</th><th>Requirement</th><th>Implementation</th><th>Tests</th></tr></thead>
+        <tbody>
+          <tr class="hl"><td><strong>DI-001</strong></td><td>Unique ID per record</td><td><code>record_uid = LINE:ROW</code> unique index</td><td class="ok">✓ PASS</td></tr>
+          <tr><td><strong>DI-002</strong></td><td>Verbatim storage, no modification</td><td>DB triggers block UPDATE/DELETE</td><td class="ok">✓ PASS</td></tr>
+          <tr class="hl"><td><strong>DI-003</strong></td><td>Prediction locked before failure</td><td>Lock stores X, Y, timestamp — immutable</td><td class="ok">✓ PASS</td></tr>
+          <tr><td><strong>DI-004</strong></td><td>Full unit traceability</td><td>BAG lot + PVC reel linked to every unit</td><td class="ok">✓ PASS</td></tr>
+          <tr class="hl"><td><strong>DI-005</strong></td><td>Enduring — tampering detected</td><td>SHA-256 hash chain, Verify button</td><td class="ok">✓ PASS</td></tr>
+        </tbody>
+      </table>
+      <div class="card red">
+        <h3>Hash chain mechanism</h3>
+        <p style="font-size:0.85rem;color:var(--muted);line-height:1.8">Each record: <code>hash = SHA256(prev_hash + record_data)</code><br>
+        Starting from genesis hash <code>"000...000"</code><br>
+        Any edit, deletion or insertion breaks the chain.<br>
+        Dashboard Verify button checks the entire chain instantly.</p>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card green">
+        <h3>15 / 15 Tests Pass</h3>
+        <ul>
+          <li>test_urs_di_001 · unique ids, no duplicates</li>
+          <li>test_urs_di_002 · DB rejects UPDATE/DELETE</li>
+          <li>test_urs_di_003 · prediction locked before unit X</li>
+          <li>test_urs_di_003 · drift detected, forecast close to truth</li>
+          <li>test_urs_di_003 · stable line raises no alarm</li>
+          <li>test_urs_di_003 · lock rules and immutability</li>
+          <li>test_urs_di_004 · end-to-end realtime traceability</li>
+          <li>test_urs_di_005 · chain break on audit edit</li>
+          <li>test_urs_di_005 · verify detects tampering</li>
+          <li>test_historical_replay_is_idempotent</li>
+          <li>test_evaluation_error_and_lead_time</li>
+          <li>test_missing_units_are_reported</li>
+          <li>test_real_api_shape · cursor + restart</li>
+          <li>test_forecast_needs_minimum_data</li>
+          <li>test_response_shapes · client parsing</li>
+        </ul>
+      </div>
+      <div style="background:#070f18;border:1px solid var(--green);border-radius:10px;padding:14px 20px;text-align:center">
+        <div style="font-size:2.2rem;font-weight:800;color:var(--green)">PASS</div>
+        <div style="font-size:0.82rem;color:var(--muted)">Validation report · docs/validation_report.md</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ SLIDE 7 — DASHBOARD -->
+<div class="slide content">
+  <div class="slide-num-badge">07 / 10</div>
+  <h2>Live Dashboard — http://127.0.0.1:8000</h2>
+  <div class="grid2" style="gap:32px;align-items:start">
+    <div class="col">
+      <div class="card blue">
+        <h3>📊 Overview tab</h3>
+        <p>All 3 assembly lines at a glance. Status badge (WAITING / STABLE / ALARM), unit count, NOK count, forecast number.</p>
+      </div>
+      <div class="card">
+        <h3>📈 ASM-01 / 02 / 03 tabs</h3>
+        <ul>
+          <li>Live depth chart with 13–17mm limit lines</li>
+          <li>Forecast uncertainty band</li>
+          <li>Alarm indicator (orange when drift detected)</li>
+          <li>Lock button + locked prediction display</li>
+          <li>E = |Z−X| and L = X−Y once first NOK arrives</li>
+        </ul>
+      </div>
+      <div class="card orange">
+        <h3>🧪 Bags & PVC reels tab</h3>
+        <p>Material lot quality: mean port ID, OD out-of-spec, which units used each lot. Clearance = Port ID − Tube OD is the #1 leading indicator.</p>
+      </div>
+    </div>
+    <div class="col">
+      <div class="card red">
+        <h3>⚡ Events tab</h3>
+        <p>Full timestamped timeline: alarms, locks, first failures, missing units, errors. Audit trail for the jury.</p>
+      </div>
+      <div class="card green">
+        <h3>🔒 Integrity & trace tab</h3>
+        <ul>
+          <li><strong>Verify button</strong> — checks entire hash chain live</li>
+          <li>Unit traceability: enter any unit ID → see BAG lot, PVC reel, raw record, timestamp</li>
+          <li>Green = chain intact · Red = tampering detected</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>⚙️ Header controls</h3>
+        <ul>
+          <li><code>every N s</code> — polling interval</li>
+          <li><code>batch 1–5</code> — records per request (REALTIME: max 5)</li>
+          <li><code>auto-lock</code> checkbox — automatic prediction lock</li>
+          <li><code>Step</code> — manual single cycle</li>
+          <li><code>Start / Pause</code> — toggle polling</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ SLIDE 8 — SCORING -->
+<div class="slide content">
+  <div class="slide-num-badge">08 / 10</div>
+  <h2>Jury Scoring — 70 Points Total</h2>
+  <div class="grid4" style="margin-bottom:24px">
+    <div class="score-box" style="border-color:var(--red)">
+      <div class="pts" style="color:var(--red)">15</div>
+      <div class="label">Solution Quality<br>& Control</div>
+    </div>
+    <div class="score-box" style="border-color:var(--blue)">
+      <div class="pts" style="color:var(--blue)">10</div>
+      <div class="label">Solution<br>Architecture</div>
+    </div>
+    <div class="score-box" style="border-color:var(--green)">
+      <div class="pts" style="color:var(--green)">20</div>
+      <div class="label">Real-Time Monitoring<br>& Visualisation</div>
+    </div>
+    <div class="score-box" style="border-color:var(--orange)">
+      <div class="pts" style="color:var(--orange)">15</div>
+      <div class="label">Prediction<br>Accuracy</div>
+    </div>
+  </div>
+  <div class="grid2" style="gap:24px;align-items:start">
+    <div>
+      <div class="formula" style="margin-bottom:16px">
+        <div class="eq">E = |Z − X|</div>
+        <div class="def">Accuracy · lower is better · E = 0 is perfect</div>
+      </div>
+      <div class="formula">
+        <div class="eq">L = X − Y</div>
+        <div class="def">Lead time · higher is better · how early you predicted</div>
+      </div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:14px">
+        <h3>Variable definitions</h3>
+        <table>
+          <tr><td><strong>X</strong></td><td>Unit number predicted (locked by our app)</td></tr>
+          <tr><td><strong>Y</strong></td><td>Last unit received <em>when we locked</em></td></tr>
+          <tr><td><strong>Z</strong></td><td>Unit that <em>actually</em> failed first (real NOK)</td></tr>
+        </table>
+      </div>
+      <div class="card orange">
+        <h3>The trade-off</h3>
+        <p><strong>Lock early</strong> → high L (good lead time) but risky E (less data = less accurate)<br>
+        <strong>Lock late</strong> → safe E but low L<br>
+        <code>AUTO_LOCK_CONF = 0.65</code> balances both automatically.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ SLIDE 9 — REALTIME CHECKLIST -->
+<div class="slide content">
+  <div class="slide-num-badge">09 / 10</div>
+  <h2>REALTIME Jury Run — Checklist</h2>
+  <div class="grid2" style="gap:32px">
+    <div>
+      <ul class="checklist">
+        <li><div class="num">1</div><div><strong>Get passcode from mentor</strong> — replaces <code>team02</code> for REALTIME</div></li>
+        <li><div class="num">2</div><div><strong>Run the app</strong>:<br>
+          <code style="display:block;margin-top:6px;white-space:pre-wrap;font-size:0.78rem">$env:MODE="REALTIME"
+$env:TEAM_ID="02"
+$env:CODE="&lt;passcode&gt;"
+python run.py</code></div></li>
+        <li><div class="num">3</div><div><strong>Open dashboard</strong>: <code>http://127.0.0.1:8000</code><br>Header must show <span class="badge red">REALTIME</span></div></li>
+        <li><div class="num">4</div><div><strong>Press Step once</strong> — confirm all 3 lines + BAG + PVC return data, no red error in header</div></li>
+        <li><div class="num">5</div><div><strong>Press Start</strong> — data streams live (max 5 records per request in REALTIME)</div></li>
+        <li><div class="num">6</div><div><strong>Watch for ALARM</strong> on any line — orange badge appears when drift detected</div></li>
+        <li><div class="num">7</div><div><strong>Press Lock</strong> on the alarmed line — commits prediction X with timestamp, immutable</div></li>
+        <li><div class="num">8</div><div><strong>Wait for first NOK</strong> — app computes E = |Z−X| and L = X−Y automatically</div></li>
+        <li><div class="num">9</div><div><strong>Show Integrity & trace tab</strong> → press Verify → show green hash chain to jury</div></li>
+      </ul>
+    </div>
+    <div class="col">
+      <div class="card red">
+        <h3>⚠️ REALTIME — nothing can be replayed</h3>
+        <ul>
+          <li>Every response journalled to <code>data/realtime_02_responses.jsonl</code> before DB</li>
+          <li>REALTIME DB is separate from HISTORICAL — evidence stays clean</li>
+          <li>Simulator is stateless — app owns the cursor</li>
+          <li>You can only get 5 assembly records per request</li>
+          <li>Once locked, prediction cannot be changed or deleted</li>
+        </ul>
+      </div>
+      <div class="card blue">
+        <h3>Key difference: HISTORICAL vs REALTIME</h3>
+        <table>
+          <tr><th></th><th>HISTORICAL</th><th>REALTIME</th></tr>
+          <tr><td>Records/req</td><td>up to 100</td><td class="ok">max 5</td></tr>
+          <tr><td>Can replay</td><td>✅ yes</td><td style="color:var(--red)">❌ no</td></tr>
+          <tr><td>Code</td><td>team02</td><td class="ok">passcode</td></tr>
+          <tr><td>Database</td><td>historical_02.db</td><td class="ok">realtime_02.db</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ SLIDE 10 — TEAM -->
+<div class="slide cover">
+  <div class="slide-num-badge">10 / 10</div>
+  <div style="max-width:900px;width:100%">
+    <h2 style="border:none;padding:0;margin-bottom:32px;text-align:center">Team Split & Deliverables</h2>
+    <div class="grid2" style="margin-bottom:32px;gap:20px">
+      <div class="card blue">
+        <h3>Data & API</h3>
+        <p><code>client.py</code> · <code>tools/probe.py</code><br>HTTP integration, response shape handling, team/code discovery</p>
+      </div>
+      <div class="card red">
+        <h3>Evidence Store & Integrity</h3>
+        <p><code>store.py</code> · <code>tests/test_all.py</code><br>Hash chain, triggers, verify, 15 automated tests, validation report</p>
+      </div>
+      <div class="card orange">
+        <h3>Model & Prediction</h3>
+        <p><code>model.py</code> · <code>engine.py</code><br>EWMA, CUSUM, ridge regression, auto-lock rules, E/L evaluation</p>
+      </div>
+      <div class="card green">
+        <h3>Dashboard & Presentation</h3>
+        <p><code>server.py</code> · <code>web/index.html</code><br>Live Chart.js dashboard, all tabs, lock UI, integrity trace</p>
+      </div>
+    </div>
+    <div style="display:flex;gap:16px;justify-content:center;flex-wrap:wrap">
+      <span class="badge blue">Python 3.9+ · stdlib only</span>
+      <span class="badge green">15/15 Tests · PASS</span>
+      <span class="badge orange">5 URS requirements covered</span>
+      <span class="badge red">ALCOA+ compliant</span>
+      <span class="badge blue">Zero pip install</span>
+      <span class="badge green">Works offline</span>
+    </div>
+  </div>
+</div>
+
+</div><!-- end .deck -->
+
+<!-- NAVIGATION -->
+<nav>
+  <button onclick="go(-1)">◀</button>
+  <div class="dot-nav" id="dots"></div>
+  <span id="slideNum">1 / 10</span>
+  <button onclick="go(1)">▶</button>
+</nav>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  let cur = 0;
+  const dotsEl = document.getElementById('dots');
+  const numEl = document.getElementById('slideNum');
+
+  // build dots
+  slides.forEach((_, i) => {
+    const d = document.createElement('div');
+    d.className = 'dot' + (i === 0 ? ' on' : '');
+    d.onclick = () => show(i);
+    dotsEl.appendChild(d);
+  });
+
+  function show(n) {
+    slides[cur].classList.remove('active');
+    dotsEl.children[cur].classList.remove('on');
+    cur = (n + slides.length) % slides.length;
+    slides[cur].classList.add('active');
+    dotsEl.children[cur].classList.add('on');
+    numEl.textContent = (cur + 1) + ' / ' + slides.length;
+  }
+
+  function go(d) { show(cur + d); }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === ' ') go(1);
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') go(-1);
+  });
+</script>
+</body>
+</html>

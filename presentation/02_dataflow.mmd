@@ -1,0 +1,42 @@
+sequenceDiagram
+    participant UI as Dashboard (browser)
+    participant SV as server.py
+    participant EN as engine.py
+    participant CL as client.py
+    participant MFG as Manufacturing API (live)
+    participant JNL as .jsonl journal
+    participant DB as SQLite (store.py)
+    participant MO as model.py
+
+    UI->>SV: POST /api/control {action:"start"}
+    SV->>EN: engine.start()
+
+    loop Every 3 seconds
+        EN->>CL: fetch(BAG-01, limit=100)
+        CL->>MFG: GET /lines/BAG-01/...
+        MFG-->>CL: [{lotId, portIdIn, ...}]
+        CL-->>EN: {records, url, raw_text}
+        EN->>JNL: append raw response (fsync)
+        EN->>DB: add_raw() → SHA256 → hash chain
+        EN->>DB: add_bag() → bag_meas table
+
+        EN->>CL: fetch(PVC-01, limit=100)
+        CL->>MFG: GET /lines/PVC-01/...
+        MFG-->>CL: [{reelId, outerDiameterIn, ...}]
+        EN->>JNL: append raw response (fsync)
+        EN->>DB: add_pvc() → pvc_meas table
+
+        EN->>CL: fetch(ASM-01, limit=25)
+        CL->>MFG: GET /lines/ASM-01/...
+        MFG-->>CL: [{unitId, visualInspectionMm, ...}]
+        EN->>JNL: append raw response (fsync)
+        EN->>DB: add_asm() → asm_units table
+        EN->>MO: feed_monitor(unit)
+        MO-->>EN: alarm? + forecast X
+        EN->>DB: add_audit(ALARM) if new alarm
+        EN->>DB: lock(line, X) if auto-lock conditions met
+    end
+
+    UI->>SV: GET /api/state?tail=400
+    SV-->>UI: {lines, bag, pvc, audit, counts}
+    UI->>UI: re-render charts

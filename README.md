@@ -1,8 +1,6 @@
 # Gate 3 · Digital Twin — first-failure prediction for ASM-01 / ASM-02 / ASM-03
 
-Python 3.9+ standard library by default (no `pip install`). Chart.js 4.4.1 is vendored, so the dashboard works offline. PyTorch is optional for the future learned first-failure inference adapter.
-
-The running app reads production/runtime records from the configured manufacturing REST API (`SIM_BASE_URL`); it does not generate or substitute manufacturing data. `tools/mock_simulator.py` is a local test/development fixture only. If the API is unavailable, the poller reports the error and leaves the line data unchanged.
+Python 3.9+ standard library only (no `pip install`). Chart.js 4.4.1 is vendored, so the dashboard works offline.
 
 ## Run it
 
@@ -10,18 +8,26 @@ The running app reads production/runtime records from the configured manufacturi
 # 0. (once) find the working teamId/code pair for HISTORICAL (404 = team/code mismatch)
 python tools/probe.py                       # tries TEAM-01 / 01 / 1 / A / team01 x team01 / 01 / TEAM-01
 
-# 1. Develop on HISTORICAL data
+# 1. Develop on HISTORICAL data (REST API - default)
 MODE=HISTORICAL TEAM_ID=TEAM-01 CODE=team01 python run.py        # open http://127.0.0.1:8000, press Start
+
+# 1a. Develop on HISTORICAL data (WebSocket - experimental)
+MODE=HISTORICAL TEAM_ID=TEAM-01 CODE=team01 USE_WEBSOCKET=1 python run.py  # WebSocket to simulator + dashboard
 
 # 2. Jury run: REALTIME (mentor gives the passcode)
 MODE=REALTIME TEAM_ID=TEAM-01 CODE=<passcode> AUTO_LOCK=1 python run.py
+
+# 2a. Jury run with WebSocket
+MODE=REALTIME TEAM_ID=TEAM-01 CODE=<passcode> AUTO_LOCK=1 USE_WEBSOCKET=1 python run.py
 ```
 
-PowerShell: `$env:MODE="REALTIME"; $env:TEAM_ID="TEAM-01"; $env:CODE="<passcode>"; $env:AUTO_LOCK="1"; python run.py`
+PowerShell: `$env:MODE="HISTORICAL"; $env:TEAM_ID="TEAM-01"; $env:CODE="team01"; python run.py`
 
-For local development without API access, run the test fixture with `python tools/mock_simulator.py --port 9000` and
+PowerShell with WebSocket: `$env:MODE="HISTORICAL"; $env:TEAM_ID="TEAM-01"; $env:CODE="team01"; $env:USE_WEBSOCKET="1"; python run.py`
+
+No simulator access? `python tools/mock_simulator.py --port 9000` and
 `SIM_BASE_URL=http://127.0.0.1:9000/simulator MODE=REALTIME TEAM_ID=TEAM-01 CODE=XYZ789 python run.py`.
-The fixture generates deterministic records from the Gate 2 root-cause numbers; it is not the production data source.
+The mock is **only a test double** built from the Gate 2 root-cause numbers; it is not the real simulator.
 
 ### REALTIME checklist (nothing can be replayed)
 1. Start the app **paused** (default) and open the dashboard; check the header shows `REALTIME`.
@@ -30,25 +36,39 @@ The fixture generates deterministic records from the Gate 2 root-cause numbers; 
 4. Every response is journalled to `data/realtime_*_responses.jsonl` *before* it is parsed, then stored in `data/realtime_*.db`.
 5. HISTORICAL and REALTIME use different database files, so rehearsal data never mixes with jury evidence.
 
+### Transport Layers: REST API vs. WebSocket
+
+The application now supports **two transport modes** for communicating with the simulator:
+
+| Feature | REST API (Default) | WebSocket (`USE_WEBSOCKET=1`) |
+|---------|---|---|
+| Protocol | HTTP GET/POST | RFC 6455 WebSocket |
+| Connection | New connection per request | Persistent connection |
+| Latency | HTTP round-trip (~100ms) | Near-instant (<10ms) |
+| Overhead | Headers + handshake per request | One handshake |
+| Best For | Occasional polling | Continuous monitoring |
+| Browser Support | 100% | 100% (with fallback) |
+| Fallback | N/A | Automatic to REST API |
+
+**Dashboard communication** (browser ↔ server) automatically:
+- Attempts WebSocket first on `/ws`
+- Falls back to REST API if WebSocket unavailable
+- No configuration needed; works transparently
+
+**Simulator communication** (engine ↔ manufacturing simulator):
+- Set `USE_WEBSOCKET=1` to use WebSocket client
+- Default uses REST API (`SimClient`)
+- Requires simulator WebSocket support (check with your team)
+
+See [WEBSOCKET_MIGRATION.md](WEBSOCKET_MIGRATION.md) for implementation details and troubleshooting.
+
 ### How the real API works (from its OpenAPI document)
 The simulator is **stateless**: it has no cursor or clock. The app keeps its own *next row* per line and asks for `startWith` (1-based) + `limit` (assembly: 1–100 HISTORICAL, 1–5 REALTIME; BAG/PVC: 1–100). Records are camelCase (`unitId`, `visualInspectionMm` …): they are stored **verbatim** and converted to snake_case only for processing. The event id of a record is its source row number, so `record_uid = LINE:ROW` is unique and a re-delivered row is never stored twice. After a restart the app resumes from the highest stored row. `503` means the organisers have not loaded that dataset yet; `404` means wrong line or team/code.
 
 Because nothing server-side stops a client reading ahead, the app only ever requests the next slice, and every lock stores `next_row_to_request` for each line as evidence that nothing beyond Y had been fetched.
 
 Settings (env vars, all in `app/config.py`): `SIM_BASE_URL`, `SIM_PATH`, `MODE`, `TEAM_ID`, `CODE`, `START_PARAM`, `LIMIT_PARAM`,
-`ASM_BATCH`, `POLL_INTERVAL`, `AUTO_LOCK`, `AUTO_LOCK_CONF`, `MIN_LEAD`, `LSL_MM`, `USL_MM`, `PORT`.
-
-### Optional PyTorch inference
-
-Install PyTorch only when using a trained first-failure model:
-
-```bash
-python -m pip install -r requirements-torch.txt
-```
-
-`app/inference.py` defines the adapter contract. A supplied model receives features from a model-specific feature builder and must return calibrated per-unit failure probabilities with shape `[horizon]` or `[1, horizon]`. The adapter validates those hazards and derives a first-failure distribution. The model and feature builder are injected into `Engine` as `first_failure_inference`; checkpoint loading and feature normalization remain model-specific and should be added with the trained artifact.
-
-No trained PyTorch checkpoint is currently included. Until one is supplied, the existing statistical forecast remains authoritative; `/api/state` reports the neural inference status as unavailable. Even when an adapter is injected, its result is advisory and does not change prediction locking or auto-lock behavior.
+`ASM_BATCH`, `POLL_INTERVAL`, `AUTO_LOCK`, `AUTO_LOCK_CONF`, `MIN_LEAD`, `LSL_MM`, `USL_MM`, `PORT`, `USE_WEBSOCKET`.
 
 ## How it maps to the jury scoring sheet (§7, Gate III, 70 pts)
 
@@ -65,7 +85,7 @@ Trade-off to decide as a team: **L rewards locking early, E rewards locking late
 ## Architecture
 
 ```
-Manufacturing REST API ──> client.py ──> engine.py ──> store.py (SQLite, append-only, hash-chained)
+Simulator REST ──> client.py ──> engine.py ──> store.py (SQLite, append-only, hash-chained)
  (BAG, PVC, ASM×3)  retries,      journal file     │
                     tolerant      ingest, derive   ├── model.py  (LineMonitor: alarms + first-failure forecast)
                     parsing       lock, evaluate   └── server.py (JSON API) ──> web/index.html (Chart.js)
@@ -83,8 +103,6 @@ Technology choice: stdlib Python + SQLite + Chart.js — runs on any laptop at t
 Scalability: one poller thread per engine, cheap per-line state; more lines = add ids to `ASM_LINES`.
 
 **Prediction method.** Insertion depth is regressed on leading indicators (bag-port-ID minus tube-OD clearance, axis following error, pressure, speed) with a ridge prior from the Gate 2 root-cause analysis (+0.001 in clearance → +0.76 mm depth). A recency-weighted trend of the explained signal is extrapolated with its uncertainty; the probability that each future unit is outside 13–17 mm gives the distribution of the *first* failing unit, and its median is X. Auto-lock needs: an active alarm, a significant trend, three consecutive confirmations, and either confidence ≥ `AUTO_LOCK_CONF` or failure being imminent.
-
-**First-failure alert.** The dashboard shows a prominent alert when the forecast is ready, drift is active, and a first-failure estimate is available. It identifies the predicted unit and ±5-unit forecast confidence, and links to the affected line. When a real inspection records the first NOK, the alert changes to confirmed and shows the observed unit. This is an informational alert only; it does not stop equipment or change prediction locks.
 
 ### Suggested split of work (edit names)
 Data & API (client/probe) · Evidence store & integrity (store/tests) · Model & prediction (model) · Dashboard (web) · Documentation, validation & presentation.

@@ -1,0 +1,69 @@
+erDiagram
+    requests {
+        int id PK
+        text ts
+        text line_id
+        text url
+        int http_status
+        int n_records
+        text body_sha256
+        text prev_hash
+        text hash
+    }
+    raw_events {
+        int seq PK
+        text record_uid UK
+        text source_line
+        text kind
+        text event_id
+        text unit_id
+        int request_id FK
+        text payload
+        text payload_sha256
+        text prev_hash
+        text hash
+    }
+    asm_units {
+        text line_id
+        text unit_id
+        int n
+        real visual_inspection_mm
+        real axis_following_error_mm
+        real clearance_in
+        text result
+        int raw_seq FK
+    }
+    bag_meas {
+        int seq FK
+        text lot_id
+        real port_id_in
+    }
+    pvc_meas {
+        int seq FK
+        text reel_id
+        real outer_diameter_in
+        real inner_diameter_in
+    }
+    predictions {
+        int id PK
+        text line_id
+        int predicted_n
+        int last_n
+        text source
+        text prev_hash
+        text hash
+    }
+    audit {
+        int id PK
+        text ts
+        text type
+        text line_id
+        text detail
+        text prev_hash
+        text hash
+    }
+
+    requests ||--o{ raw_events : "contains"
+    raw_events ||--o| asm_units : "parsed into"
+    raw_events ||--o| bag_meas : "parsed into"
+    raw_events ||--o| pvc_meas : "parsed into"
